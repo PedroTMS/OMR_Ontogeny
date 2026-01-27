@@ -32,6 +32,7 @@ expe_table = expe_registry.table
 print(f"Loaded {len(expe_table)} experiments")
 print(f"Available strains: {expe_table.strain.unique()}")
 print(f"Table columns: {list(expe_table.columns)}")
+print("-" * 30)
 
 # Check if all fish have a .pickle cam_log file
 # Prep long-form DataFrame
@@ -40,33 +41,66 @@ for root, dirs, files in os.walk(os.path.join(data_folder,protocol_name)):
     # Look for camlog.pkl and camlog.txt files in the same directory
     File_pkl = [f for f in files if f.startswith('OMR_Ontogeny_VOL_') and f.endswith(('.pickle', '.pkl'))]
     File_txt = [f for f in files if f.startswith('OMR_Ontogeny_VOL_') and f.endswith('.txt')]
+
     if File_txt:
-        Filename = File_txt[0]
+        Raw_filename = File_txt[0]
+        Fish_name = Raw_filename.replace('000.txt', '')
         # Parse file name parts ex.: OMR_Ontogeny_VOL_18_03_19_Tu_Tank3627_C20_12dpf_P4_77_66_Atlas000
+
+        # Initialize variables to 'Unknown' so code doesn't crash if Parse fails
+        Strain = "Unknown"
+        Setup = "Unknown"
+
         try:
-            File_name_parts = Filename.split('_')
-            strain = File_name_parts[7]
+            Filename_parts = Fish_name.split('_')
+            # Check length to avoid Index Error
+            if len(Filename_parts) == 14:
+                Strain = Filename_parts[6]
+                Setup = Filename_parts[13]
+            else:
+                print(f"Warning: Filename format unexpected in {Raw_filename}")
+
         except Exception as e:
             print(f"Error: no raw .txt file in {root}: {e}")
 
-    if File_txt and File_pkl:
-        pickle = 1
+        pickle = 1 if File_pkl else 0
         all_data.append({
-            "Strain": strain,
-            "Fish_ID": Filename[:-4],
-            "Pickle_file": pickle
-            })
-    else:
-        pickle = 0
-        all_data.append({
-            "Strain": strain,
-            "Fish_ID": Filename[:-4],
+            "Strain": Strain,
+            "Fish_ID": Fish_name,
+            "Setup": Setup,
             "Pickle_file": pickle
             })
 
-#   print("Directory path: %s"%root)
-#   print("Directory Names: %s"%dirs)
-#   print("Files Names: %s"%files)
+# Convert all_data to DataFrame
+All_data_df = pd.DataFrame(all_data)
+
+# Print how many strains there are
+unique_strains = All_data_df['Strain'].unique()
+print(f"Total number of strains found: {len(unique_strains)}")
+print(f"Strains list: {unique_strains}")
+print("-" * 30)
+
+# Count total number of Giants and Tu
+total_giant = len(All_data_df[(All_data_df['Strain'] == 'Giant')])
+total_tu = len(All_data_df[(All_data_df['Strain'] == 'Tu')])
+print(f"Total number of fish in the dataset: {total_giant + total_tu}")
+print(f"Total N of Giants: {total_giant}; total N of Tu: {total_tu}")
+
+# Count Giant with no pickle files
+giant_p0 = len(All_data_df[(All_data_df['Strain'] == 'Giant') & (All_data_df['Pickle_file'] == 0)])
+print(f"Giant with no pickle files: {giant_p0}")
+
+# Count Giant with pickle files (pre-processed)
+giant_p1 = len(All_data_df[(All_data_df['Strain'] == 'Giant') & (All_data_df['Pickle_file'] == 1)])
+print(f"Giant with pickle files (pre-processed): {giant_p1}")
+
+# Count Tu with no pickle files
+tu_p0 = len(All_data_df[(All_data_df['Strain'] == 'Tu') & (All_data_df['Pickle_file'] == 0)])
+print(f"Tu with no pickle files:    {tu_p0}")
+
+# Count Tu with pickle files (pre-processed)
+tu_p1 = len(All_data_df[(All_data_df['Strain'] == 'Tu') & (All_data_df['Pickle_file'] == 1)])
+print(f"Tu with pickle files (pre-processed)1:    {tu_p1}")
 
 # Load Fish (using loaders) iteratively
 # Select first fish from Tu strain
@@ -77,26 +111,3 @@ fish = expe_registry.get_recording(fish_id)
 print(f"Selected fish ID: {fish_id}")
 print(f"Fish experiment name: {fish.expe_name}")
 
-# file = "F:\\OMR_Ontogeny_VOL\\atlas\\Giant_Danio\\4dpf\\P1\\OMR_Ontogeny_VOL_27_02_19_Giant_Tank2_C10_04dpf_P1_75_66_Atlas000_MergedLog.pickle"
-# with open(file, 'rb') as f:
-#     cam_log = pickle.load(f)
-# cam_log.columns
-
-# import pandas as pd
-# import os
-
-# output_folder = r"F:\\OMR_Ontogeny_VOL\\atlas\\Tu\\10dpf\\P1" 
-# file_name = "OMR_Ontogeny_VOL_02_03_19_Tu_Tank3389_C01_10dpf_P1_78_66_Atlas000_MergedLog.pkl"
-# # Combine folder and filename
-# full_path = os.path.join(output_folder, file_name)
-# # Check if the folder exists; if not, create it automatically
-# if not os.path.exists(output_folder):
-#     os.makedirs(output_folder)
-#     print(f"Created new directory: {output_folder}")
-
-# # Save the DataFrame
-# try:
-#     merged_log.to_pickle(full_path)
-#     print(f"Success! Dataframe saved to:\n{full_path}")
-# except Exception as e:
-#     print(f"Error saving file: {e}")
