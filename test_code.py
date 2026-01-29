@@ -96,20 +96,23 @@ print(f"Giant with pickle files (pre-processed): {giant_p1}")
 
 # Count Tu with no pickle files
 tu_p0 = len(All_data_df[(All_data_df['Strain'] == 'Tu') & (All_data_df['Pickle_file'] == 0)])
-print(f"Tu with no pickle files:    {tu_p0}")
+print(f"Tu with no pickle files: {tu_p0}")
 
 # Count Tu with pickle files (pre-processed)
 tu_p1 = len(All_data_df[(All_data_df['Strain'] == 'Tu') & (All_data_df['Pickle_file'] == 1)])
-print(f"Tu with pickle files (pre-processed)1:    {tu_p1}")
+print(f"Tu with pickle files (pre-processed)1: {tu_p1}")
+
+# Count total number of fish with pickle files
+print(f"Total number of fish with pickle files (pre-processed)1: {tu_p1 + giant_p1}")
 
 # Load Fish (using loaders) iteratively
 # Select first fish from Tu strain
-tu_fish = expe_table[expe_table.strain == 'Tu']
-fish_id = tu_fish.index[0]  # Get first valid fish ID
-fish = expe_registry.get_recording(fish_id)
+# tu_fish = expe_table[expe_table.strain == 'Tu']
+# fish_id = tu_fish.index[0]  # Get first valid fish ID
+# fish = expe_registry.get_recording(fish_id)
 
-print(f"Selected fish ID: {fish_id}")
-print(f"Fish experiment name: {fish.expe_name}")
+# print(f"Selected fish ID: {fish_id}")
+# print(f"Fish experiment name: {fish.expe_name}")
 
 
 # file = "F:\\OMR_Ontogeny_VOL\\atlas\\Giant_Danio\\4dpf\\P1\\OMR_Ontogeny_VOL_27_02_19_Giant_Tank2_C10_04dpf_P1_75_66_Atlas000_MergedLog.pickle"
