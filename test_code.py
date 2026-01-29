@@ -111,3 +111,9 @@ fish = expe_registry.get_recording(fish_id)
 print(f"Selected fish ID: {fish_id}")
 print(f"Fish experiment name: {fish.expe_name}")
 
+
+# file = "F:\\OMR_Ontogeny_VOL\\atlas\\Giant_Danio\\4dpf\\P1\\OMR_Ontogeny_VOL_27_02_19_Giant_Tank2_C10_04dpf_P1_75_66_Atlas000_MergedLog.pickle"
+# with open(file, 'rb') as f:
+#     cam_log = pickle.load(f)
+# cam_log.columns
+
