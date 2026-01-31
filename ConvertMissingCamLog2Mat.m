@@ -30,10 +30,72 @@ cam_files = dir(cam_pattern);
 stim_pattern = fullfile(root_folder, '**', 'stimlog_*.txt'); % Uses wildcard (*) for file ending
 stim_files = dir(stim_pattern);
 
+%% CHECKPOINT 1: Verify File Pairing (exclude isolated files)
+% Every folder processed needs to have BOTH a cam_log AND a stim_log.
+
+if ~isempty(cam_files) && ~isempty(stim_files)
+    % Extract lists of folders containing each file type
+    cam_folders_all = {cam_files.folder}';
+    stim_folders_all = {stim_files.folder}';
+    
+    % Find the unique folders that contain at least one of each type
+    unique_cam_folders = unique(cam_folders_all);
+    unique_stim_folders = unique(stim_folders_all);
+    
+    % The "valid" folders are the intersection of both lists
+    valid_paired_folders = intersect(unique_cam_folders, unique_stim_folders);
+    
+    % Filter Camera Logs
+    paired_cam = ismember(cam_folders_all, valid_paired_folders);
+    num_isolated_cam = sum(~paired_cam);
+    
+    % Store isolated cam_log files before filtering
+    isolated_cam_files = cam_files(~paired_cam);
+    
+    % Keep only paired files
+    cam_files = cam_files(paired_cam);
+    
+    % Filter Stimulus Logs
+    paired_stim = ismember(stim_folders_all, valid_paired_folders);
+    num_isolated_stim = sum(~paired_stim);
+    
+    % Store isolated stim_log files before filtering
+    isolated_stim_files = stim_files(~paired_stim);
+    
+    % Keep only paired files
+    stim_files = stim_files(paired_stim);
+    
+    % --- Report Results ---
+    disp('------------------------------------------------');
+    disp('Pairing Check Results:');
+    
+    if num_isolated_cam > 0
+        fprintf('Found %d isolated cam_log files (missing stimlog in folder):\n', num_isolated_cam);
+        for k = 1:length(isolated_cam_files)
+            fprintf('  [Exclude] %s\n      -> Folder: %s\n', isolated_cam_files(k).name, isolated_cam_files(k).folder);
+        end
+        fprintf('\n');
+    end
+    
+    if num_isolated_stim > 0
+        fprintf('Found %d isolated stim_log files (missing camlog in folder):\n', num_isolated_stim);
+        for k = 1:length(isolated_stim_files)
+            fprintf('  [Exclude] %s\n      -> Folder: %s\n', isolated_stim_files(k).name, isolated_stim_files(k).folder);
+        end
+        fprintf('\n');
+    end
+    
+    if num_isolated_cam == 0 && num_isolated_stim == 0
+        disp('All files are correctly paired in their respective folders.');
+    end
+else
+    disp('Warning: One or both file lists are empty. Pairing check skipped.');
+end
+
 % Concatenate both structure arrays into one
 all_files = [cam_files; stim_files];
 
-%% CHECKPOINT: Remove Duplicate Files
+%% CHECKPOINT 2: Remove Duplicate Files
 % Filter files by the unique full file path.
 
 if ~isempty(all_files)
@@ -47,18 +109,22 @@ if ~isempty(all_files)
     num_duplicates = length(all_files) - length(unique_idx);
     
     if num_duplicates > 0
+        disp('------------------------------------------------');
         disp(['Duplicate Check: Found and removed ' num2str(num_duplicates) ' duplicate files.']);
         % Keep only the unique files
         all_files = all_files(unique_idx);
     else
+        disp('------------------------------------------------');
         disp('Duplicate Check: No duplicates found.');
     end
 else
+    disp('------------------------------------------------');
     disp('No files found matching the search criteria.');
     return; % froce stop the script
 end
 
 %% Identify Missing .mat Files
+disp('------------------------------------------------');
 disp(['Found ' num2str(length(all_files)) ' total candidate text files.']);
 disp('Checking which files are missing their .mat version...');
 
