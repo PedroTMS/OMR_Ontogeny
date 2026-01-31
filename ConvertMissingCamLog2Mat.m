@@ -1,3 +1,10 @@
+%%% Code writen by Pedro Tomás 31/01/2026
+%%% Designed to automate the conversion of raw camera log text files
+%%% into .mat files while avoiding redundancy; recursively scans the
+%%% a given directory for raw .txt files, checks if a converted .mat file
+%%% already exists, makes a table of only those without, and iterates
+%%% the ones without to convert the .txt to .mat files
+
 %% Setup and File Discovery
 % Set root folder
 root_folder = 'F:\OMR_Ontogeny_VOL';
