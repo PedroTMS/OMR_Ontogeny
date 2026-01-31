@@ -28,11 +28,11 @@ disp('Checking which files are missing their .mat version...');
 missing_indices = false(length(files), 1);
 mat_targets_list = cell(length(files), 1);
 
+% Iterate all files to check if the .mat file exists
 for i = 1:length(files)
     txt_full_path = fullfile(files(i).folder, files(i).name);
     
-    % Define the target .mat file path
-    % We replace the .txt extension with .mat
+    % Define the target .mat file path, replace the .txt extension with .mat
     mat_full_path = regexprep(txt_full_path, '\.txt$', '.mat');
     
     % Store the target path for later use
@@ -53,7 +53,7 @@ if isempty(files_to_convert)
     return;
 end
 
-%% Create Tracking Table
+%% Create Info Table
 % Create table with file details and a Status column
 FileNames = {files_to_convert.name}';
 Folders = {files_to_convert.folder}';
