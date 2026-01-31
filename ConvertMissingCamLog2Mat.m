@@ -1,11 +1,13 @@
 %%% Code writen by Pedro Tomás 31/01/2026
 %%% Designed to automate the conversion of raw camera log text files
-%%% into .mat files while avoiding redundancy; recursively scans the
-%%% a given directory for raw .txt files, checks if a converted .mat file
-%%% already exists, makes a table of only those without, and iterates
-%%% the ones without to convert the .txt to .mat files
+%%% into .mat files while avoiding redundancy; recursively scans a
+%%% given directory for raw .txt files, checks if a converted .mat
+%%% file already exists, makes a table of only those without, and
+%%% iterates the ones without to convert the .txt to .mat files
 
-%% Setup and File Discovery
+clear
+
+%% Setup main path
 % Set root folder
 root_folder = 'F:\OMR_Ontogeny_VOL';
 
@@ -14,14 +16,50 @@ if ~isfolder(root_folder)
     error('Root folder not found: %s', root_folder);
 end
 
+%% File Discovery
 disp(['Scanning folder structure: ' root_folder]);
 disp('This may take a moment...');
 
+% Find cam_log files
 % Find files that start with "OMR_Ontogeny_VOL" and end with "000.txt"
-file_pattern = fullfile(root_folder, '**', 'OMR_Ontogeny_VOL_*000.txt'); % Uses wildcard for subdirectories (**) 
-files = dir(file_pattern);
+cam_pattern = fullfile(root_folder, '**', 'OMR_Ontogeny_VOL_*000.txt'); % Uses wildcard for subdirectories (**) and wildcard(*)for file ending
+cam_files = dir(cam_pattern);
+
+% Find Stimulus Log files
+% Find files starting with "stimlog_" and ending with ".txt"
+stim_pattern = fullfile(root_folder, '**', 'stimlog_*.txt'); % Uses wildcard (*) for file ending
+stim_files = dir(stim_pattern);
+
+% Concatenate both structure arrays into one
+all_files = [cam_files; stim_files];
+
+%% CHECKPOINT: Remove Duplicate Files
+% Filter files by the unique full file path.
+
+if ~isempty(all_files)
+    % Create a cell array of full paths for every file found
+    full_paths = fullfile({all_files.folder}, {all_files.name});
+    
+    % Find unique paths and their indices
+    [~, unique_idx, ~] = unique(full_paths);
+    
+    % Calculate how many duplicates were found
+    num_duplicates = length(all_files) - length(unique_idx);
+    
+    if num_duplicates > 0
+        disp(['Duplicate Check: Found and removed ' num2str(num_duplicates) ' duplicate files.']);
+        % Keep only the unique files
+        all_files = all_files(unique_idx);
+    else
+        disp('Duplicate Check: No duplicates found.');
+    end
+else
+    disp('No files found matching the search criteria.');
+    return; % froce stop the script
+end
 
 %% Identify Missing .mat Files
+disp(['Found ' num2str(length(all_files)) ' total candidate text files.']);
 disp('Checking which files are missing their .mat version...');
 
 % Pre-allocate lists
@@ -50,7 +88,7 @@ targets_to_create = mat_targets_list(missing_indices);
 
 if isempty(files_to_convert)
     disp('No files found that need conversion.');
-    return;
+    return; % force stop the script
 end
 
 %% Create Info Table
