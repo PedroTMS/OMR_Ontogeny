@@ -129,12 +129,12 @@ disp(['Found ' num2str(length(all_files)) ' total candidate text files.']);
 disp('Checking which files are missing their .mat version...');
 
 % Pre-allocate lists
-missing_indices = false(length(files), 1);
-mat_targets_list = cell(length(files), 1);
+missing_indices = false(length(all_files), 1);
+mat_targets_list = cell(length(all_files), 1);
 
 % Iterate all files to check if the .mat file exists
-for i = 1:length(files)
-    txt_full_path = fullfile(files(i).folder, files(i).name);
+for i = 1:length(all_files)
+    txt_full_path = fullfile(all_files(i).folder, all_files(i).name);
     
     % Define the target .mat file path, replace the .txt extension with .mat
     mat_full_path = regexprep(txt_full_path, '\.txt$', '.mat');
@@ -149,7 +149,7 @@ for i = 1:length(files)
 end
 
 % Filter to only the missing files
-files_to_convert = files(missing_indices);
+files_to_convert = all_files(missing_indices);
 targets_to_create = mat_targets_list(missing_indices);
 
 if isempty(files_to_convert)
