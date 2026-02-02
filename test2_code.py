@@ -40,6 +40,17 @@ def make_circle(points):
     return c
 
 def _make_circle_one_point(points, p):
+    """
+    Computes the smallest enclosing circle for a set of points
+    constrained by two fixed boundary points.
+    Arguments:
+        points (list): A sequence of (tuples) 2D points [(x, y), ...]
+        p (tuple): First fixed boundary point (x, y)
+        q (tuple): Second fixed boundary point (x, y).
+    
+    Returns:
+        c (tuple): The calculated circle represented as (center_x, center_y, radius)
+    """
     c = (p[0], p[1], 0.0)
     for (i, q) in enumerate(points):
         if not is_in_circle(c, q):
@@ -89,16 +100,31 @@ def make_circumcircle(p0, p1, p2):
     return (ux, uy, r)
 
 def make_diameter(p0, p1):
-    """Calculates a circle defined by two points as the diameter."""
+    """Calculates a circle defined by two points as the diameter.
+    Args:
+        p0 (tuple/list): The first 2D point (x, y)
+        p1 (tuple/list): The second 2D point (x, y)
+
+    Returns:
+        c (tuple): A triplet (center_x, center_y, radius) representing the circle
+    """
     cx = (p0[0] + p1[0]) / 2.0
     cy = (p0[1] + p1[1]) / 2.0
     r = math.hypot(cx - p0[0], cy - p0[1])
     return (cx, cy, r)
 
 def is_in_circle(c, p):
+    """
+    p[0], p[1] are the x, y coordinates of the point
+    c[0], c[1] are the x, y coordinates of the circle's center
+    c[2] circle radius
+    """
     return c is not None and math.hypot(p[0] - c[0], p[1] - c[1]) <= c[2] * (1 + 1e-14)
 
 def _cross_product(x0, y0, x1, y1, x2, y2):
+    """
+    Calculates the 2D cross product of two vectors originating from a common point P0(x0, y0).
+    """
     return (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
 
 def compute_distance2border(x, y, circle):
