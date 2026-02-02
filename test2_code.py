@@ -6,45 +6,36 @@ import h5py
 import math
 import random
 import warnings
-import smallestenclosingcircle
+import smallestenclosingcircle  # pip install smallestenclosingcircle
 from scipy import signal
 from scipy.ndimage import maximum_filter1d
 
-# Suppress runtime warnings for cleaner output
+# --- CONFIGURATION FLAGS ---
+MEGABOUTS_FLAG = False  # Set to True to use the megabouts library
+
+# Try importing megabouts if flag is set
+if MEGABOUTS_FLAG:
+    try:
+        from megabouts.tracking_data import TailTrackingData
+        from megabouts.segmentation import TailSegmentation
+        from megabouts.config.segmentation_config import TailSegmentationConfig
+    except ImportError:
+        print("[Warning] MEGABOUTS_FLAG is True but library not found. Falling back to manual detection.")
+        MEGABOUTS_FLAG = False
+
 warnings.filterwarnings('ignore')
 
 # ==============================================================================
-# SECTION 1: HELPER ALGORITHMS
+# SECTION 1: HELPER ALGORITHMS (Geometry & Tracking)
 # ==============================================================================
 
 def compute_distance2border(x, y, circle):
-    """
-    Calculates Euclidean distance from a point to the circle's edge.
-    
-    Args:
-        x (float): Point x-coordinate.
-        y (float): Point y-coordinate.
-        circle (tuple): Circle definition (center_x, center_y, radius).
-        
-    Returns:
-        float: Distance to border (positive = inside, negative = outside).
-    """
+    """Calculates Euclidean distance from a point to the circle's edge."""
     dist2center = np.sqrt((x - circle[0])**2 + (y - circle[1])**2)
     return circle[2] - dist2center
 
 def find_outlier_trajectory(df, max_angular_speed, max_speed, smoothing_win=10):
-    """
-    Flags tracking errors based on impossible velocity thresholds.
-    
-    Args:
-        df (pd.DataFrame): Data containing 'x_pos', 'y_pos', and 'body_angle'.
-        max_angular_speed (float): Threshold for angular velocity.
-        max_speed (float): Threshold for linear velocity.
-        smoothing_win (int): Window size to smooth error flags.
-        
-    Returns:
-        np.array: Array of 1.0 (error) and 0.0 (valid) for each frame.
-    """
+    """Flags tracking errors based on impossible velocity thresholds."""
     angular_speed = 180 / np.pi * np.abs(np.diff(np.unwrap(df['body_angle'].values), prepend=0))
     linear_speed = np.sqrt(np.diff(df['x_pos'].values, prepend=0)**2 + np.diff(df['y_pos'].values, prepend=0)**2)
     
@@ -59,96 +50,11 @@ def find_outlier_trajectory(df, max_angular_speed, max_speed, smoothing_win=10):
     return smoothed_fail.astype(float)
 
 def max_filter1d_valid(a, W):
-    """
-    Applies a 1D maximum filter with reflection handling.
-    
-    Args:
-        a (np.array): Input array.
-        W (int): Window size.
-        
-    Returns:
-        np.array: Filtered array.
-    """
+    """Applies a 1D maximum filter with reflection handling."""
     return maximum_filter1d(a, size=W, mode='reflect')
 
-def detect_tail_bouts(tail_angle_array, fs=700):
-    """
-    Identifies swimming bouts by analyzing tail curvature energy.
-    
-    Args:
-        tail_angle_array (np.array): Matrix of tail angles (frames x segments).
-        fs (int): Sampling frequency in Hz.
-        
-    Returns:
-        dict: Contains cumulative tail angles, smoothed angles, start indices, and end indices.
-    """
-    # Preprocessing
-    tail_data = tail_angle_array.copy()
-    tail_data[np.isnan(tail_data)] = 0
-    cumul_tail = np.cumsum(tail_data, axis=1)
-    
-    # Smoothing spatial
-    smooth_tail = np.zeros_like(cumul_tail)
-    for i in range(cumul_tail.shape[1]):
-        smooth_tail[:, i] = signal.savgol_filter(cumul_tail[:, i], window_length=11, polyorder=2)
-        
-    # Calculate motion energy (temporal diff -> spatial sum)
-    diff_tail = np.diff(smooth_tail, axis=0, prepend=0)
-    motion_signal = np.sum(np.abs(diff_tail), axis=1)
-    
-    # Envelope calculation
-    boxcar_size = 10
-    motion_envelope = signal.convolve(motion_signal, np.ones(boxcar_size)/boxcar_size, mode='same')
-    
-    # Thresholding constants
-    bout_thresh = 0.1
-    min_length = 40
-    min_amp = 0.25
-    
-    # Signal enhancement (Max - Min filter)
-    max_filt = max_filter1d_valid(motion_envelope, size=20)
-    min_filt = -max_filter1d_valid(-motion_envelope, size=400)
-    enhanced_signal = max_filt - min_filt
-    
-    # Binarize and find edges
-    is_bout = (enhanced_signal > bout_thresh).astype(int)
-    diff_bout = np.diff(is_bout, prepend=0)
-    starts = np.where(diff_bout == 1)[0]
-    ends = np.where(diff_bout == -1)[0]
-    
-    # Edge case cleanup
-    if len(starts) > len(ends): starts = starts[:-1]
-    if len(ends) > len(starts): ends = ends[1:]
-    
-    # Filter valid bouts
-    valid_bouts = []
-    for s, e in zip(starts, ends):
-        duration = e - s
-        if e <= len(enhanced_signal):
-            amplitude = np.max(enhanced_signal[s:e])
-            if duration > min_length and amplitude > min_amp:
-                valid_bouts.append((s, e))
-            
-    valid_starts = [x[0] for x in valid_bouts]
-    valid_ends = [x[1] for x in valid_bouts]
-    
-    return {
-        'cumul_tail': cumul_tail,
-        'smooth_tail': smooth_tail,
-        'bout_starts': np.array(valid_starts),
-        'bout_ends': np.array(valid_ends)
-    }
-
 def addindex2identicalcolumnsname(df):
-    """
-    Renames duplicate DataFrame columns by appending a counter.
-    
-    Args:
-        df (pd.DataFrame): Input dataframe with potential duplicate columns.
-        
-    Returns:
-        pd.DataFrame: Dataframe with unique column names.
-    """
+    """Renames duplicate DataFrame columns by appending a counter."""
     cols = pd.Series(df.columns)
     for dup in df.columns[df.columns.duplicated()].unique():
         cols[df.columns.get_loc(dup)] = [dup + '.' + str(d_idx) for d_idx in range(df.columns.get_loc(dup).sum())]
@@ -156,20 +62,125 @@ def addindex2identicalcolumnsname(df):
     return df
 
 # ==============================================================================
-# SECTION 2: METADATA PARSING
+# SECTION 2: BEHAVIORAL ALGORITHMS (Signal Processing & Bouts)
+# ==============================================================================
+
+def compute_tail_signals(tail_angle_array):
+    """
+    Computes cumulative and smoothed tail angles for logging purposes.
+    These metrics are saved to the file regardless of the detection method used.
+    """
+    tail_data = tail_angle_array.copy()
+    tail_data[np.isnan(tail_data)] = 0
+    
+    # 1. Cumulative Sum (Spatial)
+    cumul_tail = np.cumsum(tail_data, axis=1)
+    
+    # 2. Smoothing (Savgol filter)
+    smooth_tail = np.zeros_like(cumul_tail)
+    for i in range(cumul_tail.shape[1]):
+        smooth_tail[:, i] = signal.savgol_filter(cumul_tail[:, i], window_length=11, polyorder=2)
+        
+    return cumul_tail, smooth_tail
+
+def detect_bouts_manual(smooth_tail, fs=700):
+    """
+    Original custom algorithm: Detects bouts using motion energy envelope thresholding.
+    """
+    # Calculate motion energy
+    diff_tail = np.diff(smooth_tail, axis=0, prepend=0)
+    motion_signal = np.sum(np.abs(diff_tail), axis=1)
+    
+    # Envelope
+    boxcar_size = 10
+    motion_envelope = signal.convolve(motion_signal, np.ones(boxcar_size)/boxcar_size, mode='same')
+    
+    # Enhancement
+    max_filt = max_filter1d_valid(motion_envelope, size=20)
+    min_filt = -max_filter1d_valid(-motion_envelope, size=400)
+    enhanced_signal = max_filt - min_filt
+    
+    # Thresholding
+    bout_thresh = 0.1
+    is_bout = (enhanced_signal > bout_thresh).astype(int)
+    diff_bout = np.diff(is_bout, prepend=0)
+    starts = np.where(diff_bout == 1)[0]
+    ends = np.where(diff_bout == -1)[0]
+    
+    # Cleanup edge cases
+    if len(starts) > len(ends): starts = starts[:-1]
+    if len(ends) > len(starts): ends = ends[1:]
+    
+    # Filters
+    min_length = 40
+    min_amp = 0.25
+    valid_starts = []
+    valid_ends = []
+    
+    for s, e in zip(starts, ends):
+        duration = e - s
+        if e <= len(enhanced_signal):
+            amplitude = np.max(enhanced_signal[s:e])
+            if duration > min_length and amplitude > min_amp:
+                valid_starts.append(s)
+                valid_ends.append(e)
+                
+    return np.array(valid_starts), np.array(valid_ends)
+
+def detect_bouts_megabouts(tail_angle_array, fs=700):
+    """
+    Uses the MEGABOUTS library to detect bouts.
+    """
+    # Create configuration
+    seg_cfg = TailSegmentationConfig(
+        fps=fs,
+        min_bout_duration=40, # Matches manual min_length
+        bout_thresh=0.1       # Matches manual bout_thresh
+    )
+    
+    # Initialize data object
+    # megabouts expects (n_frames, n_segments)
+    tracking_data = TailTrackingData.from_array(tail_angle_array, fps=fs)
+    
+    # Run segmentation
+    segmenter = TailSegmentation(tracking_data, seg_cfg)
+    results = segmenter.run()
+    
+    # Extract indices
+    # megabouts returns Bout objects with .start and .end attributes
+    starts = [b.start for b in results.bouts]
+    ends = [b.end for b in results.bouts]
+    
+    return np.array(starts), np.array(ends)
+
+def analyze_behavior(tail_angle_array, fs=700, use_megabouts=False):
+    """
+    Main wrapper that computes signals and runs the selected detection algorithm.
+    """
+    # 1. Always compute standard signals for the log file
+    cumul_tail, smooth_tail = compute_tail_signals(tail_angle_array)
+    
+    # 2. Run Detection
+    if use_megabouts:
+        print("  [Behavior] Using MEGABOUTS for segmentation.")
+        starts, ends = detect_bouts_megabouts(tail_angle_array, fs)
+    else:
+        print("  [Behavior] Using Manual Thresholding for segmentation.")
+        starts, ends = detect_bouts_manual(smooth_tail, fs)
+        
+    return {
+        'cumul_tail': cumul_tail,
+        'smooth_tail': smooth_tail,
+        'bout_starts': starts,
+        'bout_ends': ends
+    }
+
+# ==============================================================================
+# SECTION 3: METADATA PARSING
 # ==============================================================================
 
 def parse_filename_metadata(filename, folder_path):
-    """
-    Extracts experimental parameters from the filename string.
-    
-    Args:
-        filename (str): Name of the file (e.g., OMR_Ontogeny_VOL_...).
-        folder_path (str): Path to the file directory.
-        
-    Returns:
-        dict: Dictionary of metadata (strain, age, resolution, etc.).
-    """
+    """Extracts experimental parameters from the filename string."""
     clean_name = filename.replace('.txt', '').replace('.mat', '')
     parts = clean_name.split('_')
     
@@ -182,7 +193,6 @@ def parse_filename_metadata(filename, folder_path):
     }
     
     try:
-        # Parsing logic based on fixed suffixes
         rig_raw = parts[-1]
         meta['fish_rig'] = ''.join([c for c in rig_raw if not c.isdigit()])
         meta['fish_circle'] = float(parts[-2])
@@ -199,56 +209,34 @@ def parse_filename_metadata(filename, folder_path):
     return meta
 
 def generate_database(root_folder):
-    """
-    Scans directory tree to build a table of all fish experiments.
-    
-    Args:
-        root_folder (str): Top-level directory to scan.
-        
-    Returns:
-        pd.DataFrame: Table of all found experiments and their status.
-    """
+    """Scans directory tree to build a table of all fish experiments."""
     records = []
     print(f"Scanning {root_folder} for fish experiments...")
     
     for root, dirs, files in os.walk(root_folder):
-        # Identify experiments by raw text file
         txt_files = [f for f in files if f.endswith('000.txt') and f.startswith('OMR_Ontogeny_VOL_')]
         
         for f in txt_files:
             entry = parse_filename_metadata(f, root)
-            
-            # Locate corresponding stim log
             stim_files = [sf for sf in os.listdir(root) if 'stimlog' in sf and sf.endswith('.mat')]
             entry['fish_stimlog_filename'] = stim_files[0].replace('.mat', '') if stim_files else None
             
-            # Check processing status
             base_name = f.replace('.txt', '')
             merged_path = os.path.join(root, base_name + '_MergedLog.pickle')
             entry['saving_flag'] = os.path.exists(merged_path)
-            
             records.append(entry)
             
     return pd.DataFrame(records)
 
 # ==============================================================================
-# SECTION 3: LOG CONVERSION & MERGING
+# SECTION 4: LOG CONVERSION & MERGING
 # ==============================================================================
 
 def process_recording(row):
-    """
-    Runs conversion, analysis, and merging pipeline for a single recording.
-    
-    Args:
-        row (pd.Series): Row from the experiment database containing metadata.
-        
-    Returns:
-        bool: True if successful, False otherwise.
-    """
+    """Runs conversion, analysis, and merging pipeline for a single recording."""
     folder = row['fish_folder']
     base_name = row['fish_filename'].replace('.txt', '')
     
-    # Define Paths
     raw_cam_mat = os.path.join(folder, base_name + '.mat')
     pkl_cam = os.path.join(folder, base_name + '.pickle')
     stim_name = row['fish_stimlog_filename']
@@ -339,9 +327,11 @@ def process_recording(row):
     fail_mask = find_outlier_trajectory(df_cam, (40.0 * 1000)/fps, (100.0 / (pix_size/1000.0))/fps)
     df_cam['fail_body_tracking'] = pd.Series(fail_mask, index=df_cam.index)
 
-    # Detect Bouts
+    # Detect Bouts (Conditional Logic)
     tail_cols = [c for c in df_cam.columns if 'tail_angle' in c]
-    bout_results = detect_tail_bouts(df_cam[tail_cols].values, fs=fps)
+    
+    # *** HERE IS THE SWITCH FOR MEGABOUTS ***
+    bout_results = analyze_behavior(df_cam[tail_cols].values, fs=fps, use_megabouts=MEGABOUTS_FLAG)
     
     # --- 4. Merge Data ---
     cam_indexed = df_cam.set_index('frame_number')
@@ -352,16 +342,31 @@ def process_recording(row):
     merged['grating_orientation'] = merged['grating_orientation'].fillna(method='ffill')
     merged['grating_speed'] = merged['grating_speed'].fillna(method='ffill')
     
-    # Append Bout Data
+    # Append Bout Data (Signals)
     for i in range(bout_results['cumul_tail'].shape[1]):
         merged[f'cumul_tail_angle.{i}'] = bout_results['cumul_tail'][:, i]
-        
+        merged[f'smooth_cumul_tail_angle.{i}'] = bout_results['smooth_tail'][:, i]
+
+    # Append Bout Data (Indices)
     bout_array = np.zeros(len(merged))
     frame_lookup = df_cam['frame_number'].values
-    # Map starts/ends to merged dataframe
+    
+    # Map array indices back to frame numbers
+    merged['id_bout_start_ind'] = np.nan
+    merged['id_bout_end_ind'] = np.nan
+    
     for k, (s, e) in enumerate(zip(bout_results['bout_starts'], bout_results['bout_ends'])):
-        if e < len(bout_array): bout_array[s:e] = k + 1
+        if s < len(frame_lookup) and e < len(frame_lookup):
+            f_s, f_e = frame_lookup[s], frame_lookup[e]
             
+            # Map start/end specific frames
+            if f_s in merged.index: merged.at[f_s, 'id_bout_start_ind'] = k
+            if f_e in merged.index: merged.at[f_e, 'id_bout_end_ind'] = k
+            
+            # Map active duration
+            if e < len(bout_array):
+                bout_array[s:e] = k + 1
+
     merged['tail_active'] = bout_array
     
     # --- 5. Cleanup & Save ---
@@ -379,16 +384,16 @@ def process_recording(row):
 if __name__ == "__main__":
     root_path = 'F:/OMR_Ontogeny_VOL'
     
-    # 1. Build Database
+    # Generate database from file structure
     df_experiments = generate_database(root_path)
     
     if not df_experiments.empty:
-        # 2. Identify missing logs
+        # Filter for missing logs
         to_process = df_experiments[df_experiments['saving_flag'] == False]
         print(f"Total Recordings: {len(df_experiments)}")
         print(f"Missing Logs: {len(to_process)}")
         
-        # 3. Process
+        # Run pipeline
         for idx, row in to_process.iterrows():
             try:
                 process_recording(row)
