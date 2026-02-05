@@ -7,7 +7,7 @@ import h5py
 import math
 import random
 import warnings
-import smallestenclosingcircle  # pip install smallestenclosingcircle
+import smallestenclosingcircle
 from scipy import signal
 from scipy.ndimage import maximum_filter1d
 
@@ -130,7 +130,7 @@ def compute_tail_signals(tail_angle_array):
 
 def detect_bouts_manual(smooth_tail, fs=700):
     """
-    Original custom algorithm: Detects bouts using motion energy envelope thresholding.
+    Original custom algorithm: Detects bouts using tail angle change (motion energy) envelope thresholding.
     
     Args:
         smooth_tail (np.array): Smoothed cumulative tail angles.
@@ -139,11 +139,11 @@ def detect_bouts_manual(smooth_tail, fs=700):
     Returns:
         tuple: (start_indices, end_indices)
     """
-    # Calculate motion energy
+    # Calculate tail angle change (motion energy)
     diff_tail = np.diff(smooth_tail, axis=0, prepend=0)
     motion_signal = np.sum(np.abs(diff_tail), axis=1)
     
-    # Envelope
+    # Bout envelope - filter signal to smooth tail beats
     boxcar_size = 10
     motion_envelope = signal.convolve(motion_signal, np.ones(boxcar_size)/boxcar_size, mode='same')
     
@@ -301,7 +301,7 @@ def generate_database(root_folder):
         txt_files = [f for f in files if f.endswith('000.txt') and f.startswith('OMR_Ontogeny_VOL_')]
         
         for f in txt_files:
-            entry = parse_filename_metadata(f, root)
+            entry = parse_filename_metadata(f, root) # builds dictionary with filename info
             stim_files = [sf for sf in os.listdir(root) if 'stimlog' in sf and sf.endswith('.mat')]
             entry['fish_stimlog_filename'] = stim_files[0].replace('.mat', '') if stim_files else None
             
@@ -376,7 +376,7 @@ def process_recording(row):
     if not os.path.exists(pkl_cam):
         try:
             with h5py.File(raw_cam_mat, 'r') as f:
-                cam_data = f['a'][()].T 
+                cam_data = f['a'][()].T # read everything, transpose and load to memory
                 
             col_names = [
                 'frame_number', 'x_pos', 'y_pos', 'x_body_vect', 'y_body_vect', 'body_angle',
