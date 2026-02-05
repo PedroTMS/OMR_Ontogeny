@@ -249,44 +249,45 @@ def analyze_behavior(tail_angle_array, fs=700, use_megabouts=False):
 def parse_filename_metadata(filename, folder_path):
     """
     Extracts experimental parameters from the filename string.
+    Strictly parses structure; returns None if any field is missing/malformed.
     
     Args:
         filename (str): Name of the file.
         folder_path (str): Directory path.
         
     Returns:
-        dict: Extracted metadata.
+        dict: Extracted metadata or None if invalid.
     """
     clean_name = filename.replace('.txt', '').replace('.mat', '')
     parts = clean_name.split('_')
     
-    meta = {
-        'fish_filename': filename,
-        'fish_folder': folder_path,
-        'fish_resolution': 78.0, 
-        'fish_circle': 66.0,
-        'fish_strain': 'Unknown'
-    }
-    
     try:
+        # Strict parsing - no defaults allowed
         rig_raw = parts[-1]
-        meta['fish_rig'] = ''.join([c for c in rig_raw if not c.isdigit()])
-        meta['fish_circle'] = float(parts[-2])
-        meta['fish_resolution'] = float(parts[-3])
-        meta['fish_timeperiod'] = int(parts[-4].replace('P', ''))
-        meta['fish_age'] = int(parts[-5].replace('dpf', ''))
-        meta['fish_clutch'] = int(parts[-6].replace('C', ''))
-        meta['fish_tank'] = int(parts[-7].replace('Tank', ''))
-        meta['fish_strain'] = parts[-8]
-        meta['fish_date'] = "_".join(parts[-11:-8])
-    except (IndexError, ValueError):
-        pass
         
-    return meta
+        meta = {
+            'fish_filename': filename,
+            'fish_folder': folder_path,
+            'fish_rig': ''.join([c for c in rig_raw if not c.isdigit()]),
+            'fish_circle': float(parts[-2]),
+            'fish_resolution': float(parts[-3]),
+            'fish_timeperiod': int(parts[-4].replace('P', '')),
+            'fish_age': int(parts[-5].replace('dpf', '')),
+            'fish_clutch': int(parts[-6].replace('C', '')),
+            'fish_tank': int(parts[-7].replace('Tank', '')),
+            'fish_strain': parts[-8],
+            'fish_date': "_".join(parts[-11:-8])
+        }
+        return meta
+        
+    except (IndexError, ValueError):
+        # If any index is missing or any conversion fails, discard this file
+        return None
 
 def generate_database(root_folder):
     """
     Scans directory tree to build a table of all fish experiments.
+    Discards files with invalid naming conventions.
     
     Args:
         root_folder (str): Root directory to scan.
@@ -295,13 +296,20 @@ def generate_database(root_folder):
         pd.DataFrame: Table of experiments and their status.
     """
     records = []
+    discarded_files = []
+    
     print(f"Scanning {root_folder} for fish experiments...")
     
     for root, dirs, files in os.walk(root_folder):
         txt_files = [f for f in files if f.endswith('000.txt') and f.startswith('OMR_Ontogeny_VOL_')]
         
         for f in txt_files:
-            entry = parse_filename_metadata(f, root) # builds dictionary with filename info
+            entry = parse_filename_metadata(f, root) # builds dictionary with filename info; returns None if invalid
+            
+            if entry is None:
+                discarded_files.append(f)
+                continue # Skip this file and move to the next
+                
             stim_files = [sf for sf in os.listdir(root) if 'stimlog' in sf and sf.endswith('.mat')]
             entry['fish_stimlog_filename'] = stim_files[0].replace('.mat', '') if stim_files else None
             
@@ -309,7 +317,15 @@ def generate_database(root_folder):
             merged_path = os.path.join(root, base_name + '_MergedLog.pickle')
             entry['saving_flag'] = os.path.exists(merged_path)
             records.append(entry)
-            
+    
+    # Report discarded files
+    if discarded_files:
+        print("\n" + "="*50)
+        print(f"WARNING: Discarded {len(discarded_files)} files due to invalid naming/typos:")
+        for bad_file in discarded_files:
+            print(f"  [X] {bad_file}")
+        print("="*50 + "\n")
+        
     return pd.DataFrame(records)
 
 # ==============================================================================
@@ -377,13 +393,15 @@ def process_recording(row):
         try:
             with h5py.File(raw_cam_mat, 'r') as f:
                 cam_data = f['a'][()].T # read everything, transpose and load to memory
-                
+            
+            # Updated: tail_value.{i} -> tail_value_{i}
+            # Updated: tail_angle.{i} -> tail_angle_{i}
             col_names = [
                 'frame_number', 'x_pos', 'y_pos', 'x_body_vect', 'y_body_vect', 'body_angle',
                 'max_val', 'fish_blob_val', 'mid_eye_x', 'mid_eye_y', 'hour', 'minute',
                 'stim_number', 'cum_sum_tail'
-            ] + [f'tail_value.{i}' for i in range(10)] + ['body_angle_origin'] + \
-                [f'tail_angle.{i}' for i in range(10)] + ['first_or_not', 'timing', 'lag']
+            ] + [f'tail_value_{i}' for i in range(10)] + ['body_angle_origin'] + \
+                [f'tail_angle_{i}' for i in range(10)] + ['first_or_not', 'timing', 'lag']
             
             width = cam_data.shape[1]
             if width == len(col_names):
@@ -406,17 +424,35 @@ def process_recording(row):
     y_mm = df_cam['y_pos'] * pix_size
     
     # Distance to Border
-    points = [(x_mm[i], y_mm[i]) for i in range(0, len(x_mm), 100) if not np.isnan(x_mm[i])]
-    if len(points) > 5:
+    # Updated: Explicit variables instead of magic numbers
+    border_sampling_step = 100
+    min_circle_points = 5
+    microns_per_mm = 1000.0
+    
+    points = [(x_mm[i], y_mm[i]) for i in range(0, len(x_mm), border_sampling_step) if not np.isnan(x_mm[i])]
+    
+    if len(points) > min_circle_points:
         arena_circle = smallestenclosingcircle.make_circle(points) 
         dist_mm = compute_distance2border(x_mm, y_mm, arena_circle)
-        df_cam['distance2border_mm'] = dist_mm / 1000.0 
+        df_cam['distance2border_mm'] = dist_mm / microns_per_mm 
     else:
         df_cam['distance2border_mm'] = np.nan
 
     # Tracking Failures
     fps = 700.0
-    fail_mask = find_outlier_trajectory(df_cam, (40.0 * 1000)/fps, (100.0 / (pix_size/1000.0))/fps)
+    ms_per_sec = 1000.0
+    max_ang_vel_deg_per_ms = 40.0
+    max_lin_vel_mm_per_s = 100.0
+
+    # Calculate thresholds per frame for the outlier function
+    # 1. Angular limit: (deg/ms * ms/s) / fps = deg/frame
+    ang_thresh_per_frame = (max_ang_vel_deg_per_ms * ms_per_sec) / fps
+
+    # 2. Linear limit: (mm/s / (um/px / um/mm)) / fps = px/frame
+    mm_per_pixel = pix_size / microns_per_mm
+    lin_thresh_per_frame = (max_lin_vel_mm_per_s / mm_per_pixel) / fps
+
+    fail_mask = find_outlier_trajectory(df_cam, ang_thresh_per_frame, lin_thresh_per_frame)
     df_cam['fail_body_tracking'] = pd.Series(fail_mask, index=df_cam.index)
 
     # Detect Bouts (Flag controls method)
@@ -461,7 +497,8 @@ def process_recording(row):
     merged['tail_active'] = bout_array
     
     # --- 5. Cleanup & Save ---
-    drop_cols = ['fish_blob_val', 'max_val', 'x_body_vect', 'y_body_vect'] + [f'tail_value.{i}' for i in range(10)]
+    # Updated: drop list must match new column name tail_value_{i}
+    drop_cols = ['fish_blob_val', 'max_val', 'x_body_vect', 'y_body_vect'] + [f'tail_value_{i}' for i in range(10)]
     merged.drop(columns=[c for c in drop_cols if c in merged.columns], inplace=True)
     merged.to_pickle(final_merged, compression='infer')
     
