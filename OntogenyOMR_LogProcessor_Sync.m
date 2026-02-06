@@ -6,12 +6,12 @@ clear;
 
 %% 1. Path Configuration
 root_folder = 'F:\OMR_Ontogeny_VOL';
-cam_dest = fullfile(root_folder, 'Camlog_Mat_Files');
-stim_dest = fullfile(root_folder, 'Stimlog_Mat_Files');
+cam_destiny = fullfile(root_folder, 'Camlog_Mat_Files');
+stim_destiny = fullfile(root_folder, 'Stimlog_Mat_Files');
 
 % Initialize output directories
-if ~isfolder(cam_dest), mkdir(cam_dest); end
-if ~isfolder(stim_dest), mkdir(stim_dest); end
+if ~isfolder(cam_destiny), mkdir(cam_destiny); end
+if ~isfolder(stim_destiny), mkdir(stim_destiny); end
 
 %% 2. Find files (recursive)
 % Recursively find all .mat files
@@ -32,12 +32,12 @@ for i = 1:length(files_to_process)
     
     % Identify file type and set target
     if contains(fname, 'OMR_Ontogeny_VOL') && contains(fname, '000.mat')
-        target = fullfile(cam_dest, fname);
+        target = fullfile(cam_destiny, fname);
         [status, ~] = copyfile(source, target);
         if status, cam_count = cam_count + 1; end
         
     elseif contains(fname, 'stimlog_') && contains(fname, '.mat')
-        target = fullfile(stim_dest, fname);
+        target = fullfile(stim_destiny, fname);
         [status, ~] = copyfile(source, target);
         if status, stim_count = stim_count + 1; end
     end
