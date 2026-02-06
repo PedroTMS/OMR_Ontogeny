@@ -15,6 +15,39 @@ import h5py
 import numpy as np
 import config  # Import configuration for root path and flags
 
+def get_camera_column_names():
+    """
+    Returns the standard list of column names for the camera log.
+    
+    Naming Convention:
+      - Uses underscore indexing for both values and angles.
+      - Examples: 'tail_value_0', 'tail_angle_0'
+      - This ensures consistency with the cleanup logic in processing.py.
+    
+    Returns:
+        list: List of 38 column strings.
+    """
+    # 1. Standard Metrics (14 cols)
+    base_cols = [
+        'frame_number', 'x_pos', 'y_pos', 'x_body_vect', 'y_body_vect', 'body_angle',
+        'max_val', 'fish_blob_val', 'mid_eye_x', 'mid_eye_y', 'hour', 'minute',
+        'stim_number', 'cum_sum_tail'
+    ]
+    
+    # 2. Tail Values (10 cols): tail_value_0 ... tail_value_9
+    tail_values = [f'tail_value_{i}' for i in range(10)]
+    
+    # 3. Reference Angle (1 col)
+    angle_origin = ['body_angle_origin']
+    
+    # 4. Tail Angles (10 cols): tail_angle_0 ... tail_angle_9
+    tail_angles = [f'tail_angle_{i}' for i in range(10)]
+    
+    # 5. Technical Flags (3 cols)
+    flags = ['first_or_not', 'timing', 'lag']
+    
+    return base_cols + tail_values + angle_origin + tail_angles + flags
+
 def parse_filename_metadata(filename, folder_path):
     """
     Extracts experimental parameters from the filename string.
@@ -145,17 +178,25 @@ def load_cam_log(file_path):
 
 def addindex2identicalcolumnsname(df):
     """
-    Renames duplicate DataFrame columns by appending a counter.
-    Example: tail_value, tail_value -> tail_value.0, tail_value.1
+    Renames duplicate DataFrame columns by appending an underscore counter.
+    Example: 'col', 'col' -> 'col_0', 'col_1'
     
     Args:
-        df (pd.DataFrame): Input dataframe.
+        df (pd.DataFrame): Input dataframe with potential duplicate columns.
         
     Returns:
         pd.DataFrame: Dataframe with unique column names.
     """
     cols = pd.Series(df.columns)
     for dup in df.columns[df.columns.duplicated()].unique():
-        cols[df.columns.get_loc(dup)] = [dup + '.' + str(d_idx) for d_idx in range(df.columns.get_loc(dup).sum())]
+        mask = df.columns.get_loc(dup)
+        count = mask.sum()
+        
+        # Use simple underscore indexing for all duplicates.
+        # This aligns with the 'tail_value_0' style logic.
+        new_names = [f"{dup}_{i}" for i in range(count)]
+            
+        cols[mask] = new_names
+        
     df.columns = cols
     return df
