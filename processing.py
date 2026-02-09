@@ -82,7 +82,7 @@ def detect_bouts_manual(smooth_tail, fs):
     if len(ends) > len(starts):
         ends = ends[1:]
     
-    # Filter by duration and amplitude (Now using Config)
+    # Filter by duration and amplitude (Using Config)
     min_length = config.MIN_BOUT_DURATION
     min_amp = config.MIN_BOUT_AMPLITUDE
     
@@ -122,7 +122,13 @@ def analyze_behavior(tail_angle_array, fs):
             from megabouts.segmentation import TailSegmentation
             from megabouts.config.segmentation_config import TailSegmentationConfig
             
-            seg_cfg = TailSegmentationConfig(fps=fs, min_bout_duration=config.MIN_BOUT_DURATION, bout_thresh=0.1)
+            # --- FIX: Initialize default config, then overwrite attributes ---
+            # Most library versions do not accept kwargs in __init__
+            seg_cfg = TailSegmentationConfig() 
+            seg_cfg.fps = fs
+            seg_cfg.min_bout_duration = config.MIN_BOUT_DURATION
+            seg_cfg.bout_thresh = 0.1
+            
             tracking_data = TailTrackingData.from_array(tail_angle_array, fps=fs)
             segmenter = TailSegmentation(tracking_data, seg_cfg)
             results = segmenter.run()
@@ -172,9 +178,7 @@ def process_recording(row):
 
     print(f"Processing {base_name}...")
 
-    # ==========================================================================
-    # 1. Convert Stimulus Log (ALWAYS FROM RAW)
-    # ==========================================================================
+    ### Convert Stimulus Log (Robust Loading) ###
     try:
         # IO Utils handles renaming and keeps ALL columns
         df_stim = io_utils.load_stim_log(raw_stim_mat)
@@ -183,9 +187,7 @@ def process_recording(row):
         print(f"  [Error] StimLog conversion: {e}")
         return False
 
-    # ==========================================================================
-    # 2. Convert Camera Log (ALWAYS FROM RAW)
-    # ==========================================================================
+    ### Convert Camera Log (Robust Loading) ###
     try:
         df_cam = io_utils.load_cam_log(raw_cam_mat)
         col_names = io_utils.get_camera_column_names()
@@ -207,9 +209,7 @@ def process_recording(row):
         print(f"  [Error] CamLog conversion: {e}")
         return False
 
-    # ==========================================================================
-    # 3. Behavioral Analysis
-    # ==========================================================================
+    ### Behavioral Analysis ###
     pix_size = row['fish_resolution']
     x_mm = df_cam['x_pos'] * pix_size
     y_mm = df_cam['y_pos'] * pix_size
@@ -231,9 +231,7 @@ def process_recording(row):
     tail_cols = [c for c in df_cam.columns if 'tail_angle' in c]
     bout_results = analyze_behavior(df_cam[tail_cols].values, config.FPS)
     
-    # ==========================================================================
-    # 4. Merge Data
-    # ==========================================================================
+    ### Merge Data ###
     cam_indexed = df_cam.set_index('frame_number') # set the frame_number as the index (the row labels)
     
     # Keep ALL stimulus columns (drop duplicates on cam_frame to allow 1:1 join)
@@ -264,7 +262,6 @@ def process_recording(row):
             f_s, f_e = frame_lookup[s], frame_lookup[e]
             
             # Map start/end specific frames 
-            # ex.: for bout 1 (k=0) starting at frame X, set 'id_bout_start_ind' to k
             if f_s in merged.index:
                 merged.at[f_s, 'id_bout_start_ind'] = k
             if f_e in merged.index:
@@ -276,9 +273,7 @@ def process_recording(row):
 
     merged['tail_active'] = bout_array
     
-    # ==========================================================================
-    # 5. Cleanup & Save
-    # ==========================================================================
+    ### Cleanup & Save ###
     # Drops raw vectors and raw tail values (keeping only angles)
     # Uses tail_value_{i} format matching io_utils
     drop_cols = ['fish_blob_val', 'max_val', 'x_body_vect', 'y_body_vect'] + \

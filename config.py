@@ -31,7 +31,7 @@ MIN_CIRCLE_POINTS = 5           # Min points required to define arena circle
 
 # --- Global Flags ---
 # Set to True to use the 'megabouts' library for deep-learning detection.
-MEGABOUTS_FLAG = True 
+MEGABOUTS_FLAG = False 
 
 # --- Conditional Imports ---
 MEGABOUTS_AVAILABLE = False
