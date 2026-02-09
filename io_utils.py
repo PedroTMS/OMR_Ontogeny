@@ -13,7 +13,7 @@ import pandas as pd
 import scipy.io as sio
 import h5py
 import numpy as np
-import config  # Import configuration for root path and flags
+# import config  # Import configuration for root path and flags
 
 def get_camera_column_names():
     """
@@ -139,12 +139,13 @@ def generate_database(root_folder):
 def load_stim_log(file_path):
     """
     Loads and parses the Stimulus MAT file into a DataFrame.
+    Renames columns to match the standard pipeline conventions immediately.
     
     Args:
         file_path (str): Full path to the .mat file.
         
     Returns:
-        pd.DataFrame: Parsed stimulus data.
+        pd.DataFrame: Parsed stimulus data with normalized column names.
     """
     mat = sio.loadmat(file_path, struct_as_record=False, squeeze_me=True)
     stim_data = mat['StimLog']
@@ -159,7 +160,27 @@ def load_stim_log(file_path):
         padded_vals = np.pad(vals, (pad_len, 0), mode='constant', constant_values=np.nan)
         data_dict[name] = padded_vals
     
-    return pd.DataFrame(data_dict)
+    df = pd.DataFrame(data_dict)
+    
+    # RENAME MAP: Standardize names immediately
+    rename_map = {
+        'iGlobalTime': 'i_global_time', 
+        'iTimeDelta': 'i_time_delta', 
+        'Id': 'cam_frame', 
+        'TimeCam': 'time_cam_shader', 
+        'xPos': 'x_pos_shader', 
+        'yPos': 'y_pos_shader', 
+        'FOrient': 'fish_orientation_shader', 
+        'Orientation': 'grating_orientation', 
+        'Speed_mm': 'grating_speed',
+        'StimNumber': 'stim_number', # Critical for distinguishing trials
+        'StimIter': 'stim_iter'      # Critical for trial counts
+    }
+    
+    # Rename columns that exist in the map
+    df.rename(columns=rename_map, inplace=True)
+    
+    return df
 
 def load_cam_log(file_path):
     """
