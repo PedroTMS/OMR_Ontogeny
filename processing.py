@@ -77,8 +77,10 @@ def detect_bouts_manual(smooth_tail, fs):
     ends = np.where(diff_bout == -1)[0]
     
     # Cleanup edge cases
-    if len(starts) > len(ends): starts = starts[:-1]
-    if len(ends) > len(starts): ends = ends[1:]
+    if len(starts) > len(ends):
+        starts = starts[:-1]
+    if len(ends) > len(starts):
+        ends = ends[1:]
     
     # Filter by duration and amplitude
     min_length = 40
@@ -159,7 +161,8 @@ def process_recording(row):
     pkl_cam = os.path.join(folder, base_name + '.pickle')
     stim_name = row['fish_stimlog_filename']
     
-    if not stim_name: return False
+    if not stim_name:
+        return False
         
     raw_stim_mat = os.path.join(folder, stim_name + '.mat')
     pkl_stim = os.path.join(folder, stim_name + '.pickle')
@@ -265,11 +268,14 @@ def process_recording(row):
             
             # Map start/end specific frames 
             # ex.: for bout 1 (k=0) starting at frame X, set 'id_bout_start_ind' to k
-            if f_s in merged.index: merged.at[f_s, 'id_bout_start_ind'] = k
-            if f_e in merged.index: merged.at[f_e, 'id_bout_end_ind'] = k
+            if f_s in merged.index:
+                merged.at[f_s, 'id_bout_start_ind'] = k
+            if f_e in merged.index:
+                merged.at[f_e, 'id_bout_end_ind'] = k
             
             # Mark active duration (using k+1 so 0=rest)
-            if e < len(bout_array): bout_array[s:e] = k + 1
+            if e < len(bout_array):
+                bout_array[s:e] = k + 1
 
     merged['tail_active'] = bout_array
     
