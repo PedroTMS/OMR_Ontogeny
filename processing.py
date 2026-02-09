@@ -173,15 +173,8 @@ def process_recording(row):
     # --- 1. Convert Stimulus Log ---
     if not os.path.exists(pkl_stim):
         try:
+            # IO Utils now handles the renaming and loads all columns
             df_stim = io_utils.load_stim_log(raw_stim_mat)
-            rename_map = {
-                'iGlobalTime': 'i_global_time', 'iTimeDelta': 'i_time_delta', 
-                'Id': 'cam_frame', 'TimeCam': 'time_cam_shader', 
-                'xPos': 'x_pos_shader', 'yPos': 'y_pos_shader', 
-                'FOrient': 'fish_orientation_shader', 
-                'Orientation': 'grating_orientation', 'Speed_mm': 'grating_speed'
-            }
-            df_stim.rename(columns=rename_map, inplace=True)
             df_stim.to_pickle(pkl_stim, compression='infer')
         except Exception as e:
             print(f"  [Error] StimLog conversion: {e}")
@@ -240,20 +233,25 @@ def process_recording(row):
     tail_cols = [c for c in df_cam.columns if 'tail_angle' in c]
     bout_results = analyze_behavior(df_cam[tail_cols].values, config.FPS)
     
-    # --- 4. Merge Data ---
+    # --- 4. Merge Data (CORRECTED) ---
     cam_indexed = df_cam.set_index('frame_number') # set the frame_number as the index (the row labels)
-    stim_subset = df_stim[['cam_frame', 'grating_orientation', 'grating_speed']]
-    stim_subset = stim_subset.drop_duplicates(subset='cam_frame').set_index('cam_frame')
     
-    # Left join to keep all camera frames
+    # Keep ALL stimulus columns (drop duplicates on cam_frame to allow 1:1 join)
+    stim_subset = df_stim.drop_duplicates(subset='cam_frame').set_index('cam_frame')
+    
+    # Left join to maintain camera timeline
     merged = cam_indexed.join(stim_subset, how='left') # making a df to store final data variables, with row index based on the left table (cam_indexed)
-    merged['grating_orientation'] = merged['grating_orientation'].fillna(method='ffill') # use forward fill to get rid of NaNs
-    merged['grating_speed'] = merged['grating_speed'].fillna(method='ffill')
     
-    # Append Bout Signals
+    # Fill gaps in stimulus data (state persistence)
+    # We apply ffill to everything we just joined from stim_subset
+    for col in stim_subset.columns:
+        merged[col] = merged[col].fillna(method='ffill') # use forward fill to get rid of NaNs
+    
+    # Append Bout Signals (Strict Underscore Naming)
     for i in range(bout_results['cumul_tail'].shape[1]):
-        merged[f'cumul_tail_angle.{i}'] = bout_results['cumul_tail'][:, i]
-        merged[f'smooth_cumul_tail_angle.{i}'] = bout_results['smooth_tail'][:, i]
+        # Enforcing "No Dots" rule: cumul_tail_angle_0
+        merged[f'cumul_tail_angle_{i}'] = bout_results['cumul_tail'][:, i]
+        merged[f'smooth_cumul_tail_angle_{i}'] = bout_results['smooth_tail'][:, i]
 
     # Append Bout Indices
     bout_array = np.zeros(len(merged)) # make a array of zeros as long as the dataframe
