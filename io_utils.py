@@ -107,13 +107,13 @@ def generate_database(root_folder):
         # Filter for raw camera logs
         txt_files = [f for f in files if f.endswith('000.txt') and f.startswith('OMR_Ontogeny_VOL_')]
         
-        for f in txt_files:
+        for f in txt_files: # builds dictionary with filename info; returns None if invalid
             # Parse Metadata
             entry = parse_filename_metadata(f, root)
             
             if entry is None:
                 discarded_files.append(f)
-                continue # Skip invalid files
+                continue # Skip this file and move to the next
             
             # Find associated Stimulus Log
             stim_files = [sf for sf in os.listdir(root) if 'stimlog' in sf and sf.endswith('.mat')]
@@ -173,7 +173,7 @@ def load_cam_log(file_path):
     """
     with h5py.File(file_path, 'r') as f:
         # Load all data, transpose to (Time x Variables)
-        cam_data = f['a'][()].T 
+        cam_data = f['a'][()].T # read everything, transpose and load to memory
     return pd.DataFrame(cam_data)
 
 def addindex2identicalcolumnsname(df):

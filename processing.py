@@ -238,13 +238,13 @@ def process_recording(row):
     bout_results = analyze_behavior(df_cam[tail_cols].values, config.FPS)
     
     # --- 4. Merge Data ---
-    cam_indexed = df_cam.set_index('frame_number') # set the frame number and the index
+    cam_indexed = df_cam.set_index('frame_number') # set the frame_number as the index (the row labels)
     stim_subset = df_stim[['cam_frame', 'grating_orientation', 'grating_speed']]
     stim_subset = stim_subset.drop_duplicates(subset='cam_frame').set_index('cam_frame')
     
     # Left join to keep all camera frames
-    merged = cam_indexed.join(stim_subset, how='left')
-    merged['grating_orientation'] = merged['grating_orientation'].fillna(method='ffill')
+    merged = cam_indexed.join(stim_subset, how='left') # making a df to store final data variables, with row index based on the left table (cam_indexed)
+    merged['grating_orientation'] = merged['grating_orientation'].fillna(method='ffill') # use forward fill to get rid of NaNs
     merged['grating_speed'] = merged['grating_speed'].fillna(method='ffill')
     
     # Append Bout Signals
@@ -253,8 +253,8 @@ def process_recording(row):
         merged[f'smooth_cumul_tail_angle.{i}'] = bout_results['smooth_tail'][:, i]
 
     # Append Bout Indices
-    bout_array = np.zeros(len(merged))
-    frame_lookup = df_cam['frame_number'].values
+    bout_array = np.zeros(len(merged)) # make a array of zeros as long as the dataframe
+    frame_lookup = df_cam['frame_number'].values # make a list to check the real frame number for each row
     merged['id_bout_start_ind'] = np.nan
     merged['id_bout_end_ind'] = np.nan
     
@@ -263,6 +263,8 @@ def process_recording(row):
         if s < len(frame_lookup) and e < len(frame_lookup):
             f_s, f_e = frame_lookup[s], frame_lookup[e]
             
+            # Map start/end specific frames 
+            # ex.: for bout 1 (k=0) starting at frame X, set 'id_bout_start_ind' to k
             if f_s in merged.index: merged.at[f_s, 'id_bout_start_ind'] = k
             if f_e in merged.index: merged.at[f_e, 'id_bout_end_ind'] = k
             
