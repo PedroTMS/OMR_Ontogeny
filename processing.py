@@ -82,9 +82,10 @@ def detect_bouts_manual(smooth_tail, fs):
     if len(ends) > len(starts):
         ends = ends[1:]
     
-    # Filter by duration and amplitude
-    min_length = 40
-    min_amp = 0.25
+    # Filter by duration and amplitude (Now using Config)
+    min_length = config.MIN_BOUT_DURATION
+    min_amp = config.MIN_BOUT_AMPLITUDE
+    
     valid_starts = []
     valid_ends = []
     
@@ -121,7 +122,7 @@ def analyze_behavior(tail_angle_array, fs):
             from megabouts.segmentation import TailSegmentation
             from megabouts.config.segmentation_config import TailSegmentationConfig
             
-            seg_cfg = TailSegmentationConfig(fps=fs, min_bout_duration=40, bout_thresh=0.1)
+            seg_cfg = TailSegmentationConfig(fps=fs, min_bout_duration=config.MIN_BOUT_DURATION, bout_thresh=0.1)
             tracking_data = TailTrackingData.from_array(tail_angle_array, fps=fs)
             segmenter = TailSegmentation(tracking_data, seg_cfg)
             results = segmenter.run()
@@ -146,6 +147,7 @@ def analyze_behavior(tail_angle_array, fs):
 def process_recording(row):
     """
     Runs conversion, analysis, and merging pipeline for a single recording.
+    Forces regeneration of all intermediate files to ensure schema consistency.
     
     Args:
         row (pd.Series): Metadata for one experiment.
@@ -170,62 +172,44 @@ def process_recording(row):
 
     print(f"Processing {base_name}...")
 
-    ### Convert Stimulus Log (Robust Loading) ###
-    df_stim = None
-    
-    # Try loading existing pickle
-    if os.path.exists(pkl_stim):
-        try:
-            df_stim = pd.read_pickle(pkl_stim)
-        except (EOFError, Exception):
-            print("  [Warning] Corrupt StimLog pickle found. Regenerating...")
-            df_stim = None # Force regeneration
+    # ==========================================================================
+    # 1. Convert Stimulus Log (ALWAYS FROM RAW)
+    # ==========================================================================
+    try:
+        # IO Utils handles renaming and keeps ALL columns
+        df_stim = io_utils.load_stim_log(raw_stim_mat)
+        df_stim.to_pickle(pkl_stim, compression='infer')
+    except Exception as e:
+        print(f"  [Error] StimLog conversion: {e}")
+        return False
 
-    # If pickle missing or corrupt, load from RAW
-    if df_stim is None:
-        try:
-            # IO Utils handles renaming and keeps ALL columns
-            df_stim = io_utils.load_stim_log(raw_stim_mat)
-            df_stim.to_pickle(pkl_stim, compression='infer')
-        except Exception as e:
-            print(f"  [Error] StimLog conversion: {e}")
-            return False
+    # ==========================================================================
+    # 2. Convert Camera Log (ALWAYS FROM RAW)
+    # ==========================================================================
+    try:
+        df_cam = io_utils.load_cam_log(raw_cam_mat)
+        col_names = io_utils.get_camera_column_names()
+        
+        width = df_cam.shape[1]
+        expected_width = len(col_names)
+        
+        # SAFETY CHECK: Alignment
+        if width == expected_width:
+            df_cam.columns = col_names
+        else:
+            print(f"  [WARNING] Column Mismatch! Raw matrix has {width} cols, expected {expected_width}.")
+            df_cam.columns = col_names[:width]
 
-    ### Convert Camera Log (Robust Loading) ###
-    df_cam = None
-    
-    # Try loading existing pickle
-    if os.path.exists(pkl_cam):
-        try:
-            df_cam = pd.read_pickle(pkl_cam)
-        except (EOFError, Exception):
-            print("  [Warning] Corrupt CamLog pickle found. Regenerating...")
-            df_cam = None
+        # Ensure unique names (handles duplicates like tail_angle)
+        df_cam = io_utils.addindex2identicalcolumnsname(df_cam)
+        df_cam.to_pickle(pkl_cam, compression='infer')
+    except Exception as e:
+        print(f"  [Error] CamLog conversion: {e}")
+        return False
 
-    # If pickle missing or corrupt, load from RAW
-    if df_cam is None:
-        try:
-            df_cam = io_utils.load_cam_log(raw_cam_mat)
-            col_names = io_utils.get_camera_column_names()
-            
-            width = df_cam.shape[1]
-            expected_width = len(col_names)
-            
-            # SAFETY CHECK: Alignment
-            if width == expected_width:
-                df_cam.columns = col_names
-            else:
-                print(f"  [WARNING] Column Mismatch! Raw matrix has {width} cols, expected {expected_width}.")
-                df_cam.columns = col_names[:width]
-
-            # Ensure unique names (handles duplicates like tail_angle)
-            df_cam = io_utils.addindex2identicalcolumnsname(df_cam)
-            df_cam.to_pickle(pkl_cam, compression='infer')
-        except Exception as e:
-            print(f"  [Error] CamLog conversion: {e}")
-            return False
-
-    ### Behavioral Analysis ###
+    # ==========================================================================
+    # 3. Behavioral Analysis
+    # ==========================================================================
     pix_size = row['fish_resolution']
     x_mm = df_cam['x_pos'] * pix_size
     y_mm = df_cam['y_pos'] * pix_size
@@ -247,7 +231,9 @@ def process_recording(row):
     tail_cols = [c for c in df_cam.columns if 'tail_angle' in c]
     bout_results = analyze_behavior(df_cam[tail_cols].values, config.FPS)
     
-    ### Merge Data ###
+    # ==========================================================================
+    # 4. Merge Data
+    # ==========================================================================
     cam_indexed = df_cam.set_index('frame_number') # set the frame_number as the index (the row labels)
     
     # Keep ALL stimulus columns (drop duplicates on cam_frame to allow 1:1 join)
@@ -290,7 +276,9 @@ def process_recording(row):
 
     merged['tail_active'] = bout_array
     
-    ### Cleanup & Save ###
+    # ==========================================================================
+    # 5. Cleanup & Save
+    # ==========================================================================
     # Drops raw vectors and raw tail values (keeping only angles)
     # Uses tail_value_{i} format matching io_utils
     drop_cols = ['fish_blob_val', 'max_val', 'x_body_vect', 'y_body_vect'] + \
