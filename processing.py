@@ -170,24 +170,42 @@ def process_recording(row):
 
     print(f"Processing {base_name}...")
 
-    # --- 1. Convert Stimulus Log ---
-    if not os.path.exists(pkl_stim):
+    ### Convert Stimulus Log (Robust Loading) ###
+    df_stim = None
+    
+    # Try loading existing pickle
+    if os.path.exists(pkl_stim):
         try:
-            # IO Utils now handles the renaming and loads all columns
+            df_stim = pd.read_pickle(pkl_stim)
+        except (EOFError, Exception):
+            print("  [Warning] Corrupt StimLog pickle found. Regenerating...")
+            df_stim = None # Force regeneration
+
+    # If pickle missing or corrupt, load from RAW
+    if df_stim is None:
+        try:
+            # IO Utils handles renaming and keeps ALL columns
             df_stim = io_utils.load_stim_log(raw_stim_mat)
             df_stim.to_pickle(pkl_stim, compression='infer')
         except Exception as e:
             print(f"  [Error] StimLog conversion: {e}")
             return False
-    else:
-        df_stim = pd.read_pickle(pkl_stim)
 
-    # --- 2. Convert Camera Log ---
-    if not os.path.exists(pkl_cam):
+    ### Convert Camera Log (Robust Loading) ###
+    df_cam = None
+    
+    # Try loading existing pickle
+    if os.path.exists(pkl_cam):
+        try:
+            df_cam = pd.read_pickle(pkl_cam)
+        except (EOFError, Exception):
+            print("  [Warning] Corrupt CamLog pickle found. Regenerating...")
+            df_cam = None
+
+    # If pickle missing or corrupt, load from RAW
+    if df_cam is None:
         try:
             df_cam = io_utils.load_cam_log(raw_cam_mat)
-            
-            # Load the schema from io_utils (guarantees correct naming)
             col_names = io_utils.get_camera_column_names()
             
             width = df_cam.shape[1]
@@ -197,21 +215,17 @@ def process_recording(row):
             if width == expected_width:
                 df_cam.columns = col_names
             else:
-                # Warning: If dimensions mismatch, assign what fits to avoid crash
                 print(f"  [WARNING] Column Mismatch! Raw matrix has {width} cols, expected {expected_width}.")
-                print(f"  -> Data might be misaligned. Assigning first {width} names.")
                 df_cam.columns = col_names[:width]
 
-            # Ensure unique names (handles any duplicate columns in the raw data)
+            # Ensure unique names (handles duplicates like tail_angle)
             df_cam = io_utils.addindex2identicalcolumnsname(df_cam)
             df_cam.to_pickle(pkl_cam, compression='infer')
         except Exception as e:
             print(f"  [Error] CamLog conversion: {e}")
             return False
-    else:
-        df_cam = pd.read_pickle(pkl_cam)
 
-    # --- 3. Behavioral Analysis ---
+    ### Behavioral Analysis ###
     pix_size = row['fish_resolution']
     x_mm = df_cam['x_pos'] * pix_size
     y_mm = df_cam['y_pos'] * pix_size
@@ -233,7 +247,7 @@ def process_recording(row):
     tail_cols = [c for c in df_cam.columns if 'tail_angle' in c]
     bout_results = analyze_behavior(df_cam[tail_cols].values, config.FPS)
     
-    # --- 4. Merge Data (CORRECTED) ---
+    ### Merge Data ###
     cam_indexed = df_cam.set_index('frame_number') # set the frame_number as the index (the row labels)
     
     # Keep ALL stimulus columns (drop duplicates on cam_frame to allow 1:1 join)
@@ -249,7 +263,6 @@ def process_recording(row):
     
     # Append Bout Signals (Strict Underscore Naming)
     for i in range(bout_results['cumul_tail'].shape[1]):
-        # Enforcing "No Dots" rule: cumul_tail_angle_0
         merged[f'cumul_tail_angle_{i}'] = bout_results['cumul_tail'][:, i]
         merged[f'smooth_cumul_tail_angle_{i}'] = bout_results['smooth_tail'][:, i]
 
@@ -277,7 +290,7 @@ def process_recording(row):
 
     merged['tail_active'] = bout_array
     
-    # --- 5. Cleanup & Save ---
+    ### Cleanup & Save ###
     # Drops raw vectors and raw tail values (keeping only angles)
     # Uses tail_value_{i} format matching io_utils
     drop_cols = ['fish_blob_val', 'max_val', 'x_body_vect', 'y_body_vect'] + \
