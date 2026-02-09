@@ -120,3 +120,26 @@ print(f"Total number of fish with pickle files (pre-processed)1: {tu_p1 + giant_
 #     cam_log = pickle.load(f)
 # cam_log.columns
 
+#######################################################
+#######################################################
+
+import pandas as pd
+
+# Replace with your actual file path
+file_path = 'F:\\OMR_Ontogeny_VOL\\atlas\\Giant_Danio\\8dpf\\P3\\OMR_Ontogeny_VOL_03_03_19_Giant_Tank1_C09_08dpf_P3_78_66_Atlas000_MergedLog.pickle'
+
+try:
+    df = pd.read_pickle(file_path)
+    
+    print("=== DATAFRAME INFO ===")
+    print(df.info())
+    print("\n")
+    
+    print("=== FIRST 5 ROWS ===")
+    print(df.head().to_string())  # .to_string() ensures all columns are visible
+    
+    print("\n=== COLUMN LIST ===")
+    print(list(df.columns))
+
+except Exception as e:
+    print(f"Error reading file: {e}")
