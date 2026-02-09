@@ -9,7 +9,7 @@ provides a final summary report.
 """
 
 import time
-import pandas as pd
+# import pandas as pd
 import config
 import io_utils
 import processing
@@ -23,7 +23,7 @@ def main():
     
     ### Build the Database ###
     # Scans the root folder defined in config.py for experiments
-    print(f"Initializing pipeline...")
+    print("Initializing pipeline...")
     df_experiments = io_utils.generate_database(config.ROOT_PATH)
     
     if df_experiments.empty:
@@ -41,7 +41,7 @@ def main():
     
     # Print Database Summary
     print(f"\n{'='*50}")
-    print(f"DATABASE SUMMARY")
+    print("DATABASE SUMMARY")
     print(f"{'='*50}")
     print(f"  Root Path           : {config.ROOT_PATH}")
     print(f"  Total Recordings    : {total_files}")
@@ -89,7 +89,7 @@ def main():
     elapsed_minutes = elapsed_seconds / 60
     
     print(f"\n{'='*50}")
-    print(f"BATCH COMPLETE")
+    print("BATCH COMPLETE")
     print(f"{'='*50}")
     print(f"  Time Elapsed   : {elapsed_minutes:.2f} minutes")
     print(f"  Successful     : {success_count}")
