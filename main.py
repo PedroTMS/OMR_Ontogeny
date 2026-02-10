@@ -17,6 +17,9 @@ import processing
 def main():
     """
     Main execution function.
+    It looks at the list from io_utils. Filters out any
+    file where saving_flag is True. Lastly, sends the
+    missing files to processing.py.
     """
     # Start timer for performance tracking
     start_time = time.time()
