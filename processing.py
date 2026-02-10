@@ -245,6 +245,19 @@ def process_recording(row):
     for col in stim_subset.columns:
         merged[col] = merged[col].fillna(method='ffill') # use forward fill to get rid of NaNs
     
+    # --- CALCULATE MISSING STIM_ITER ---
+    # Logic: Identify where stim_number changes, assign a unique ID to each block
+    if 'stim_number' in merged.columns:
+        # Fill NaNs with -1 so they don't break the logic (assuming stim numbers are positive)
+        s_num = merged['stim_number'].fillna(-1)
+        # Detect changes (True where current != previous)
+        change_mask = s_num.diff() != 0
+        # Cumulatively sum changes to get a unique ID for each block
+        merged['stim_iter'] = change_mask.cumsum()
+    else:
+        merged['stim_iter'] = np.nan
+    # -----------------------------------
+
     # Append Bout Signals (Strict Underscore Naming)
     for i in range(bout_results['cumul_tail'].shape[1]):
         merged[f'cumul_tail_angle_{i}'] = bout_results['cumul_tail'][:, i]
