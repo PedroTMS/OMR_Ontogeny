@@ -1,3 +1,13 @@
+# Simple code to search for _MergedLog.pkl files and compare date of all files
+"""
+This code is an auditing tool designed to categorize the
+processing status of the entire dataset of Ontogeny OMR
+by cross-referencing _MegedLog.pkl file dates. It explicitly
+warns you if any raw files are missing or if you have
+mismatching file versions.
+"""
+
+
 import os
 import datetime
 import pandas as pd

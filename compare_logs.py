@@ -1,3 +1,12 @@
+# Simple code to compare an old _MergedLog.pkl file with a newly generated one
+"""
+This code verifies that the new data processing pipeline
+for the Ontogeny OMR data produces results identical to
+the original 2019 analysis. It compares an "Old" reference
+_MergedLog.pkl data file against a "New" generated file to
+ensure data integrity.
+"""
+
 import pandas as pd
 import numpy as np
 import os
