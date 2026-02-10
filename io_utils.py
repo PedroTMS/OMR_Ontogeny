@@ -173,8 +173,10 @@ def load_stim_log(file_path):
         'FOrient': 'fish_orientation_shader', 
         'Orientation': 'grating_orientation', 
         'Speed_mm': 'grating_speed',
-        'StimNumber': 'stim_number', # Critical for distinguishing trials
-        'StimIter': 'stim_iter'      # Critical for trial counts
+        'StimNumber': 'stim_number',      # Critical for distinguishing trials
+        'StimIter': 'stim_iter',          # Standard case
+        'stimIter': 'stim_iter',          # Robust backup for case variations
+        'SpotWatchTime': 'spot_watch_time' # Explicitly added to fix missing column
     }
     
     # Rename columns that exist in the map
