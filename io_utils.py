@@ -13,7 +13,6 @@ import pandas as pd
 import scipy.io as sio
 import h5py
 import numpy as np
-# import config  # Import configuration for root path and flags
 
 def get_camera_column_names():
     """
@@ -176,7 +175,7 @@ def load_stim_log(file_path):
         'StimNumber': 'stim_number',      # Critical for distinguishing trials
         'StimIter': 'stim_iter',          # Standard case
         'stimIter': 'stim_iter',          # Robust backup for case variations
-        'SpotWatchTime': 'spot_watch_time' # Explicitly added to fix missing column
+        'StopWatchTime': 'spot_watch_time' # FIXED: was 'SpotWatchTime' (typo)
     }
     
     # Rename columns that exist in the map

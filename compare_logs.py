@@ -6,8 +6,8 @@ import os
 # CONFIGURATION
 # ==========================================
 # PASTE YOUR PATHS HERE:
-OLD_FILE_PATH = r"F:\OMR_Ontogeny_VOL\atlas\Giant_Danio\7dpf\P4\OMR_Ontogeny_VOL_09_03_19_Giant_Tank6_C14_07dpf_P4_76_66_Atlas000_MergedLog.pickle"
-NEW_FILE_PATH = r"F:\OMR_Ontogeny_VOL\walle\Giant_Danio\10dpf\P1\OMR_Ontogeny_VOL_18_03_19_Giant_Tank6_C24_10dpf_P1_113_88_walle000_MergedLog.pickle"
+OLD_FILE_PATH = r"C:\Users\orger\Desktop\OMR_Ontogeny_VOL_09_03_19_Giant_Tank6_C14_07dpf_P4_76_66_Atlas000_MergedLog.pickle"
+NEW_FILE_PATH = r"F:\OMR_Ontogeny_VOL\atlas\Giant_Danio\7dpf\P4\OMR_Ontogeny_VOL_09_03_19_Giant_Tank6_C14_07dpf_P4_76_66_Atlas000_MergedLog.pickle"
 # ==========================================
 
 def compare_logs(old_path, new_path):
