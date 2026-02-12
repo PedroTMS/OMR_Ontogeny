@@ -96,38 +96,47 @@ def get_unique_speeds_from_logs(root_path):
     return final_speeds
 
 
-def parse_filename_info(filename):
+def parse_filename_info(filename, fish_counter):
     """
-    Extracts metadata from the standard filename format.
-    Standard: NNN_YY_MM_DD_Species_NDPF_Rig_Flag
+    Parses F-Drive filenames and assigns a sequential FishID.
+    Uses negative indexing to be robust against prefix variations.
+    
+    Expected format: ..._Species_Tank_Clutch_Age_Fish_Res_ArenaSize_Rig_MergedLog.pickle
+    Example: OMR_Ontogeny_VOL_27_02_19_Giant_Tank2_C10_04dpf_P1_75_66_Atlas000_MergedLog.pickle
     
     Args:
-        filename (str): The filename (e.g., '023_24_05_17_Tu_7dpf_WallE_TRUE.txt')
-    
+        filename (str): Raw filename.
+        fish_counter (int): Sequential number (1, 2, 3...)
+        
     Returns:
-        dict: Metadata dictionary (FishID, Species, Age, Rig) or None.
+        dict: Metadata with synthesized 'FishID'.
     """
     try:
-        # Clean extension and _MergedLog suffix if present
+        # 1. Clean filename
         clean_name = os.path.splitext(filename)[0]
         if clean_name.endswith('_MergedLog'):
             clean_name = clean_name.replace('_MergedLog', '')
             
         parts = clean_name.split('_')
         
-        # We expect at least 7 parts based on the naming convention
-        # Example: 023_24_05_17_Tu_7dpf_WallE_TRUE
-        if len(parts) < 7:
-            return None
-            
+        # 2. Assign Sequential ID (001, 002...)
+        # This creates a clean ID consistent with the histogram structure
+        fish_id_str = f"{fish_counter:03d}" 
+        
+        # 3. Extract Metadata using Negative Indexing
+        # Based on structure: ..._Giant(8)_Tank2(7)_C10(6)_04dpf(5)_P1(4)_75(3)_66(2)_Atlas000(1)
+        
         meta = {
-            'FishID': parts[0],
-            'Species': parts[4],  # e.g., 'Tu' or 'Giant'
-            'Age': int(parts[5].replace('dpf', '')),
-            'Rig': parts[6]
+            'FishID': fish_id_str,           # Generated ID
+            'Species': parts[-8],            # 'Giant'
+            'Age': int(parts[-5].replace('dpf', '')), # '04dpf' -> 4
+            
+            # Extract Rig ('Atlas000' -> 'Atlas')
+            'Rig': ''.join([c for c in parts[-1] if not c.isdigit()]) 
         }
         return meta
     except Exception as e:
+        # print(f"Parsing Error for {filename}: {e}") 
         return None
 
 
@@ -161,7 +170,7 @@ def get_bout_metrics(starts, ends, fps, stim_speed_array):
     # Assign speed based on the frame where the bout STARTS.
     # We clip indices to be safe, though valid tracking implies valid frames.
     safe_indices = np.clip(starts.astype(int), 0, len(stim_speed_array) - 1)
-    bout_speeds = stim_speed_array[safe_indices]
+    bout_speeds = stim_speed_array[safe_indices] # stimulus speed during each bout
     
     return durations, ibis, bout_speeds
 
@@ -179,6 +188,15 @@ def calculate_histogram_cols(durations, ibis, bin_edges):
         dict: Dictionary containing the 4 histogram arrays (Bout/IBI x Counts/Prob).
     """
     def calc_hist(data):
+        """
+        Helper to calculate raw counts and probability density for a dataset.
+
+        Args:
+            data (np.array): Input data array (durations or IBIs).
+
+        Returns:
+            tuple: (counts, prob) arrays.
+        """
         if len(data) == 0:
             return np.zeros(len(bin_edges)-1), np.zeros(len(bin_edges)-1)
         
@@ -225,9 +243,10 @@ def main():
     allowed_speeds = get_unique_speeds_from_logs(ROOT_PATH)
     if not allowed_speeds:
         print("Warning: No speeds found. Using default [0, 3, 5, 10, 15, 30].")
-        allowed_speeds = [0, 3, 5, 10, 15, 30]
+        allowed_speeds = [0, 3, 5, 10, 15, 30] # expected speeds from ontogeny_omr protocol
         
     fish_records = [] # Storage for intermediate results
+    fish_counter = 1  # Initialize sequential fish counter to add a FishID to filename format
     
     print(f"\nProcessing Fish in {ROOT_PATH}...")
     
@@ -238,11 +257,15 @@ def main():
         for f in merged_files:
             file_path = os.path.join(root, f)
             
-            # 1. Parse Metadata
-            meta = parse_filename_info(f)
+            # 1. Parse Metadata with Counter
+            meta = parse_filename_info(f, fish_counter)
+            
             if meta is None:
                 continue
                 
+            # Valid fish found: Increment counter for next fish
+            fish_counter += 1
+            
             try:
                 # 2. Load Data
                 df = pd.read_pickle(file_path)
@@ -256,17 +279,19 @@ def main():
                 stim_speeds = df['grating_speed'].fillna(0).values
                 
                 # --- EXTRACT MANUAL DATA ---
-                # 'tail_active' is 0 for rest, >0 for bout IDs.
+                # 'tail_active' is 0 for rest, >0 for bout IDs; tail_Active -> Bout Indices
                 tail_active = df['tail_active'].fillna(0).values
                 is_active = (tail_active > 0).astype(int)
                 diff_active = np.diff(is_active, prepend=0)
                 
-                man_starts = np.where(diff_active == 1)[0]
-                man_ends = np.where(diff_active == -1)[0]
+                man_starts = np.where(diff_active == 1)[0] # extracting the entire array of indices
+                man_ends = np.where(diff_active == -1)[0] # extracting the entire array of indices
                 
                 # Fix edge cases (start without end, end without start)
-                if len(man_starts) > len(man_ends): man_starts = man_starts[:-1]
-                if len(man_ends) > len(man_starts): man_ends = man_ends[1:]
+                if len(man_starts) > len(man_ends):
+                    man_starts = man_starts[:-1]
+                if len(man_ends) > len(man_starts):
+                    man_ends = man_ends[1:]
                 
                 # Compute Metrics
                 man_durs, man_ibis, man_speed_tags = get_bout_metrics(man_starts, man_ends, FPS, stim_speeds)
@@ -282,7 +307,7 @@ def main():
                         
                         # 1. Configure Preprocessing (NEW Parameters)
                         # Controls smoothing and vigor calculation
-                        tp_cfg = TailPreprocessingConfig(
+                        tailprocessing_config = TailPreprocessingConfig(
                             fps=FPS,
                             savgol_window_ms=MEGABOUTS_DEFAULTS['savgol_window_ms'],
                             tail_speed_filter_ms=MEGABOUTS_DEFAULTS['tail_speed_filter_ms']
@@ -293,7 +318,7 @@ def main():
                         # Note: Library expects ms, we convert from frames if needed
                         min_dur_ms = (MEGABOUTS_DEFAULTS['min_duration_frames'] * 1000) / FPS
                         
-                        ts_cfg = TailSegmentationConfig(
+                        tailsegmnt_cfg = TailSegmentationConfig(
                             fps=FPS,
                             min_bout_duration_ms=min_dur_ms,
                             threshold=MEGABOUTS_DEFAULTS['bout_thresh']
@@ -302,7 +327,7 @@ def main():
                         # 3. Execution Pipeline
                         # A. Preprocessing: Get Tail Vigor
                         # We instantiate the preprocessor with our config
-                        preprocessor = TailPreprocessing(tp_cfg)
+                        preprocessor = TailPreprocessing(tailprocessing_config)
                         
                         # Assuming .process() or .run() takes the raw array and returns object with .tail_vigor
                         # We use tracking data container to be safe
@@ -311,7 +336,7 @@ def main():
                         
                         # B. Segmentation: Get Bouts
                         # Segmenter takes the calculated tail vigor
-                        segmenter = TailSegmentation(ts_cfg)
+                        segmenter = TailSegmentation(tailsegmnt_cfg)
                         results = segmenter.segment(processed_data.tail_vigor)
                         
                         # 4. Extract Frames
@@ -350,21 +375,24 @@ def main():
     rows_all = []
     for r in fish_records:
         # Calculate Histograms (All Data)
-        h_man = calculate_histogram_cols(r['Man_Durations'], r['Man_IBIs'], BIN_EDGES)
-        h_mega = calculate_histogram_cols(r['Mega_Durations'], r['Mega_IBIs'], BIN_EDGES)
+        hist_manual = calculate_histogram_cols(r['Man_Durations'], r['Man_IBIs'], BIN_EDGES)
+        hist_megabouts = calculate_histogram_cols(r['Mega_Durations'], r['Mega_IBIs'], BIN_EDGES)
         
         row = {
-            'FishID': r['FishID'], 'Species': r['Species'], 'Age': r['Age'], 'Rig': r['Rig'],
+            'FishID': r['FishID'],
+            'Species': r['Species'],
+            'Age': r['Age'],
+            'Rig': r['Rig'],
             
-            'Manual_Bout_Counts': h_man['Bout_Counts'],
-            'Manual_Bout_Prob':   h_man['Bout_Prob'],
-            'Manual_IBI_Counts':  h_man['IBI_Counts'],
-            'Manual_IBI_Prob':    h_man['IBI_Prob'],
+            'Manual_Bout_Counts': hist_manual['Bout_Counts'],
+            'Manual_Bout_Prob': hist_manual['Bout_Prob'],
+            'Manual_IBI_Counts': hist_manual['IBI_Counts'],
+            'Manual_IBI_Prob': hist_manual['IBI_Prob'],
             
-            'Megabouts_Bout_Counts': h_mega['Bout_Counts'],
-            'Megabouts_Bout_Prob':   h_mega['Bout_Prob'],
-            'Megabouts_IBI_Counts':  h_mega['IBI_Counts'],
-            'Megabouts_IBI_Prob':    h_mega['IBI_Prob']
+            'Megabouts_Bout_Counts': hist_megabouts['Bout_Counts'],
+            'Megabouts_Bout_Prob': hist_megabouts['Bout_Prob'],
+            'Megabouts_IBI_Counts': hist_megabouts['IBI_Counts'],
+            'Megabouts_IBI_Prob': hist_megabouts['IBI_Prob']
         }
         rows_all.append(row)
         
@@ -379,20 +407,20 @@ def main():
             tol = 1e-6 # Floating point tolerance
             
             # Filter Manual Data
-            idx_m = np.abs(r['Man_Speeds'] - speed) < tol
-            man_dur_s = r['Man_Durations'][idx_m]
+            idx_manual = np.abs(r['Man_Speeds'] - speed) < tol
+            man_dur_s = r['Man_Durations'][idx_manual]
             
             # IBI Alignment (IBIs are 1 shorter than Bouts)
             if len(r['Man_IBIs']) > 0 and len(r['Man_Speeds']) > 1:
                 ibi_speeds = r['Man_Speeds'][:-1]
-                idx_m_ibi = np.abs(ibi_speeds - speed) < tol
-                man_ibi_s = r['Man_IBIs'][idx_m_ibi]
+                idx_manual_ibi = np.abs(ibi_speeds - speed) < tol
+                man_ibi_s = r['Man_IBIs'][idx_manual_ibi]
             else:
                 man_ibi_s = np.array([])
 
             # Filter Megabouts Data
-            idx_mega = np.abs(r['Mega_Speeds'] - speed) < tol
-            mega_dur_s = r['Mega_Durations'][idx_mega]
+            idx_megabouts = np.abs(r['Mega_Speeds'] - speed) < tol
+            mega_dur_s = r['Mega_Durations'][idx_megabouts]
             
             if len(r['Mega_IBIs']) > 0 and len(r['Mega_Speeds']) > 1:
                 ibi_speeds_mega = r['Mega_Speeds'][:-1]
@@ -406,7 +434,10 @@ def main():
             h_mega_s = calculate_histogram_cols(mega_dur_s, mega_ibi_s, BIN_EDGES)
             
             row_s = {
-                'FishID': r['FishID'], 'Species': r['Species'], 'Age': r['Age'], 'Rig': r['Rig'],
+                'FishID': r['FishID'],
+                'Species': r['Species'],
+                'Age': r['Age'],
+                'Rig': r['Rig'],
                 'Speed': speed,
                 
                 'Manual_Bout_Counts': h_man_s['Bout_Counts'],
