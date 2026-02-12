@@ -1,0 +1,440 @@
+# Main code file to generate analysis Histograms
+"""
+This code is an analysis pipeline that walks the Ontogeny dataset to
+generate behavioral histograms. It extracts bout metrics (duration,
+interbout interval) from existing manually processed data and, as an
+option, the user can run Megabouts re-segmentation for direct method
+comparison. Output includes two pickled DataFrames: one aggregated
+across all conditions and another grouped by stimulus speed, mirroring
+the original MATLAB histogram data structures.
+"""
+
+import os
+import pandas as pd
+import numpy as np
+import warnings
+from scipy import signal
+
+# --- CONFIGURATION ---
+ROOT_PATH = r'F:\OMR_Ontogeny_VOL' # Update to your specific root path
+SAVE_PATH = r'results'             # Folder to save output .pkl files
+SAVE_FLAG = True                   # Set to True to save the results
+
+# Analysis Parameters (Matching MATLAB 'make_bout_histograms')
+FPS = 700.0
+BIN_SIZE = 0.05                    # Seconds
+MAX_DURATION = 2.0                 # Seconds
+BIN_EDGES = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)
+
+# Megabouts Flags
+RUN_MEGABOUTS = True               # Set False to only analyze existing manual data
+
+# Default Parameters for Detection
+# (Can be overridden per-fish if needed in the recompute_bouts function)
+MEGABOUTS_DEFAULTS = {
+    'bout_thresh': 0.1,            # Sensitivity threshold (Pipeline default)
+    'min_duration_frames': 40,     # Minimum duration in frames (Pipeline default)
+    'savgol_window_ms': 15,        # [NEW] Smoothing window (Library Default)
+    'tail_speed_filter_ms': 100,   # [NEW] Vigor filter size (Library Default)
+}
+
+# Conditional Import for Megabouts
+try:
+    from megabouts.tracking_data import TailTrackingData
+    from megabouts.segmentation import TailSegmentation
+    from megabouts.preprocessing.tail_preprocessing import TailPreprocessing
+    from megabouts.config.segmentation_config import TailSegmentationConfig
+    from megabouts.config.preprocessing_config import TailPreprocessingConfig
+    MEGABOUTS_AVAILABLE = True
+except ImportError:
+    MEGABOUTS_AVAILABLE = False
+    print("Warning: Megabouts library not found. 'Megabouts' columns will be empty.")
+
+# ==============================================================================
+# 1. HELPER FUNCTIONS
+# ==============================================================================
+
+def get_unique_speeds_from_logs(root_path):
+    """
+    Scans all _MergedLog.pickle files in the directory structure to 
+    dynamically extract the set of unique stimulus speeds used in experiments.
+    
+    Args:
+        root_path (str): The root directory to scan.
+        
+    Returns:
+        list: A sorted list of unique speeds (e.g., [0.0, 3.0, 5.0, ...])
+    """
+    unique_speeds = set()
+    print(f"Scanning {root_path} to determine ALLOWED_SPEEDS...")
+
+    for root, dirs, files in os.walk(root_path):
+        merged_files = [f for f in files if f.endswith('_MergedLog.pickle')]
+        
+        for f in merged_files:
+            file_path = os.path.join(root, f)
+            try:
+                # We interpret the pickle partially or fully. 
+                # Reading the full pickle is safer to ensure schema compliance.
+                df = pd.read_pickle(file_path)
+                
+                if 'grating_speed' in df.columns:
+                    # Drop NaNs and get unique values
+                    raw_speeds = df['grating_speed'].dropna().unique()
+                    
+                    # Round to 1 decimal place to avoid floating-point mismatch 
+                    rounded_speeds = np.round(raw_speeds, 1)
+                    
+                    unique_speeds.update(rounded_speeds)
+            except Exception as e:
+                continue
+
+    # Filter out negative artifacts if any, and sort
+    final_speeds = sorted([s for s in list(unique_speeds) if s >= 0])
+    
+    print(f"-> Dynamic speeds detected: {final_speeds}")
+    return final_speeds
+
+
+def parse_filename_info(filename):
+    """
+    Extracts metadata from the standard filename format.
+    Standard: NNN_YY_MM_DD_Species_NDPF_Rig_Flag
+    
+    Args:
+        filename (str): The filename (e.g., '023_24_05_17_Tu_7dpf_WallE_TRUE.txt')
+    
+    Returns:
+        dict: Metadata dictionary (FishID, Species, Age, Rig) or None.
+    """
+    try:
+        # Clean extension and _MergedLog suffix if present
+        clean_name = os.path.splitext(filename)[0]
+        if clean_name.endswith('_MergedLog'):
+            clean_name = clean_name.replace('_MergedLog', '')
+            
+        parts = clean_name.split('_')
+        
+        # We expect at least 7 parts based on the naming convention
+        # Example: 023_24_05_17_Tu_7dpf_WallE_TRUE
+        if len(parts) < 7:
+            return None
+            
+        meta = {
+            'FishID': parts[0],
+            'Species': parts[4],  # e.g., 'Tu' or 'Giant'
+            'Age': int(parts[5].replace('dpf', '')),
+            'Rig': parts[6]
+        }
+        return meta
+    except Exception as e:
+        return None
+
+
+def get_bout_metrics(starts, ends, fps, stim_speed_array):
+    """
+    Calculates physical metrics from start/end frames and aligns stimulus speed.
+    
+    Args:
+        starts (np.array): Array of start frames.
+        ends (np.array): Array of end frames.
+        fps (float): Frames per second.
+        stim_speed_array (np.array): Array of grating speeds per frame.
+        
+    Returns:
+        tuple: (durations, ibis, bout_speeds) all as numpy arrays.
+    """
+    if len(starts) == 0:
+        return np.array([]), np.array([]), np.array([])
+    
+    # 1. Durations (Seconds)
+    durations = (ends - starts) / fps
+    
+    # 2. Interbout Intervals (Seconds)
+    # IBI is time from End of Bout N to Start of Bout N+1
+    if len(starts) > 1:
+        ibis = (starts[1:] - ends[:-1]) / fps
+    else:
+        ibis = np.array([])
+        
+    # 3. Stimulus Speed Association
+    # Assign speed based on the frame where the bout STARTS.
+    # We clip indices to be safe, though valid tracking implies valid frames.
+    safe_indices = np.clip(starts.astype(int), 0, len(stim_speed_array) - 1)
+    bout_speeds = stim_speed_array[safe_indices]
+    
+    return durations, ibis, bout_speeds
+
+
+def calculate_histogram_cols(durations, ibis, bin_edges):
+    """
+    Computes Counts and Probability Density histograms for storing in the DataFrame.
+    
+    Args:
+        durations (np.array): List of bout durations.
+        ibis (np.array): List of interbout intervals.
+        bin_edges (np.array): The edges for the histogram bins.
+        
+    Returns:
+        dict: Dictionary containing the 4 histogram arrays (Bout/IBI x Counts/Prob).
+    """
+    def calc_hist(data):
+        if len(data) == 0:
+            return np.zeros(len(bin_edges)-1), np.zeros(len(bin_edges)-1)
+        
+        counts, _ = np.histogram(data, bins=bin_edges)
+        
+        # Normalize (Probability Density)
+        total = np.sum(counts)
+        if total > 0:
+            prob = counts / total
+        else:
+            prob = np.zeros_like(counts, dtype=float)
+            
+        return counts, prob
+
+    b_counts, b_prob = calc_hist(durations)
+    i_counts, i_prob = calc_hist(ibis)
+    
+    return {
+        'Bout_Counts': b_counts,
+        'Bout_Prob': b_prob,
+        'IBI_Counts': i_counts,
+        'IBI_Prob': i_prob
+    }
+
+# ==============================================================================
+# 2. MAIN PIPELINE
+# ==============================================================================
+
+def main():
+    """
+    Main execution loop.
+    1. Determines allowed speeds from data.
+    2. Walks directory structure to find fish.
+    3. Extracts metrics using both Manual (existing) and Megabouts (new) methods.
+    4. Aggregates data into two DataFrames matching MATLAB structures.
+    5. Saves results.
+    """
+    
+    # --- A. INITIALIZATION ---
+    if not os.path.exists(SAVE_PATH):
+        os.makedirs(SAVE_PATH)
+        
+    # Dynamically determine speeds
+    allowed_speeds = get_unique_speeds_from_logs(ROOT_PATH)
+    if not allowed_speeds:
+        print("Warning: No speeds found. Using default [0, 3, 5, 10, 15, 30].")
+        allowed_speeds = [0, 3, 5, 10, 15, 30]
+        
+    fish_records = [] # Storage for intermediate results
+    
+    print(f"\nProcessing Fish in {ROOT_PATH}...")
+    
+    # --- B. PROCESSING LOOP ---
+    for root, dirs, files in os.walk(ROOT_PATH):
+        merged_files = [f for f in files if f.endswith('_MergedLog.pickle')]
+        
+        for f in merged_files:
+            file_path = os.path.join(root, f)
+            
+            # 1. Parse Metadata
+            meta = parse_filename_info(f)
+            if meta is None:
+                continue
+                
+            try:
+                # 2. Load Data
+                df = pd.read_pickle(file_path)
+                
+                # Validation
+                if 'grating_speed' not in df.columns or 'tail_active' not in df.columns:
+                    print(f"Skipping {f}: Missing core columns.")
+                    continue
+                
+                # Get Speed Array (Fill NaNs with 0 to prevent crashes)
+                stim_speeds = df['grating_speed'].fillna(0).values
+                
+                # --- EXTRACT MANUAL DATA ---
+                # 'tail_active' is 0 for rest, >0 for bout IDs.
+                tail_active = df['tail_active'].fillna(0).values
+                is_active = (tail_active > 0).astype(int)
+                diff_active = np.diff(is_active, prepend=0)
+                
+                man_starts = np.where(diff_active == 1)[0]
+                man_ends = np.where(diff_active == -1)[0]
+                
+                # Fix edge cases (start without end, end without start)
+                if len(man_starts) > len(man_ends): man_starts = man_starts[:-1]
+                if len(man_ends) > len(man_starts): man_ends = man_ends[1:]
+                
+                # Compute Metrics
+                man_durs, man_ibis, man_speed_tags = get_bout_metrics(man_starts, man_ends, FPS, stim_speeds)
+                
+                # --- RUN MEGABOUTS (OPTIONAL) ---
+                mega_durs, mega_ibis, mega_speed_tags = [], [], []
+                
+                if RUN_MEGABOUTS and MEGABOUTS_AVAILABLE:
+                    # Extract Tail Matrix
+                    tail_cols = [c for c in df.columns if 'tail_angle' in c]
+                    if len(tail_cols) > 0:
+                        tail_data = df[tail_cols].values
+                        
+                        # 1. Configure Preprocessing (NEW Parameters)
+                        # Controls smoothing and vigor calculation
+                        tp_cfg = TailPreprocessingConfig(
+                            fps=FPS,
+                            savgol_window_ms=MEGABOUTS_DEFAULTS['savgol_window_ms'],
+                            tail_speed_filter_ms=MEGABOUTS_DEFAULTS['tail_speed_filter_ms']
+                        )
+                        
+                        # 2. Configure Segmentation
+                        # Controls thresholding logic
+                        # Note: Library expects ms, we convert from frames if needed
+                        min_dur_ms = (MEGABOUTS_DEFAULTS['min_duration_frames'] * 1000) / FPS
+                        
+                        ts_cfg = TailSegmentationConfig(
+                            fps=FPS,
+                            min_bout_duration_ms=min_dur_ms,
+                            threshold=MEGABOUTS_DEFAULTS['bout_thresh']
+                        )
+                        
+                        # 3. Execution Pipeline
+                        # A. Preprocessing: Get Tail Vigor
+                        # We instantiate the preprocessor with our config
+                        preprocessor = TailPreprocessing(tp_cfg)
+                        
+                        # Assuming .process() or .run() takes the raw array and returns object with .tail_vigor
+                        # We use tracking data container to be safe
+                        tracking_data = TailTrackingData.from_array(tail_data, fps=FPS)
+                        processed_data = preprocessor.run(tracking_data) 
+                        
+                        # B. Segmentation: Get Bouts
+                        # Segmenter takes the calculated tail vigor
+                        segmenter = TailSegmentation(ts_cfg)
+                        results = segmenter.segment(processed_data.tail_vigor)
+                        
+                        # 4. Extract Frames
+                        mega_starts = np.array(results.onset)
+                        mega_ends = np.array(results.offset)
+                        
+                        # Compute Metrics
+                        mega_durs, mega_ibis, mega_speed_tags = get_bout_metrics(mega_starts, mega_ends, FPS, stim_speeds)
+                
+                # --- STORE RAW RECORD ---
+                record = {
+                    'FishID': meta['FishID'],
+                    'Species': meta['Species'],
+                    'Age': meta['Age'],
+                    'Rig': meta['Rig'],
+                    'Filename': f,
+                    'Man_Durations': man_durs,
+                    'Man_IBIs': man_ibis,
+                    'Man_Speeds': man_speed_tags,
+                    'Mega_Durations': mega_durs,
+                    'Mega_IBIs': mega_ibis,
+                    'Mega_Speeds': mega_speed_tags
+                }
+                fish_records.append(record)
+                
+            except Exception as e:
+                print(f"Error processing {f}: {e}")
+
+    if not fish_records:
+        print("No valid fish records found. Exiting.")
+        return
+
+    # --- C. GENERATE DATASET 1: ALL BOUTS ---
+    print(f"\nBuilding 'Analysis_All_Histograms' from {len(fish_records)} fish...")
+    
+    rows_all = []
+    for r in fish_records:
+        # Calculate Histograms (All Data)
+        h_man = calculate_histogram_cols(r['Man_Durations'], r['Man_IBIs'], BIN_EDGES)
+        h_mega = calculate_histogram_cols(r['Mega_Durations'], r['Mega_IBIs'], BIN_EDGES)
+        
+        row = {
+            'FishID': r['FishID'], 'Species': r['Species'], 'Age': r['Age'], 'Rig': r['Rig'],
+            
+            'Manual_Bout_Counts': h_man['Bout_Counts'],
+            'Manual_Bout_Prob':   h_man['Bout_Prob'],
+            'Manual_IBI_Counts':  h_man['IBI_Counts'],
+            'Manual_IBI_Prob':    h_man['IBI_Prob'],
+            
+            'Megabouts_Bout_Counts': h_mega['Bout_Counts'],
+            'Megabouts_Bout_Prob':   h_mega['Bout_Prob'],
+            'Megabouts_IBI_Counts':  h_mega['IBI_Counts'],
+            'Megabouts_IBI_Prob':    h_mega['IBI_Prob']
+        }
+        rows_all.append(row)
+        
+    df_all = pd.DataFrame(rows_all)
+
+    # --- D. GENERATE DATASET 2: BY SPEED ---
+    print("Building 'Analysis_BySpeed_Histograms'...")
+    
+    rows_speed = []
+    for r in fish_records:
+        for speed in allowed_speeds:
+            tol = 1e-6 # Floating point tolerance
+            
+            # Filter Manual Data
+            idx_m = np.abs(r['Man_Speeds'] - speed) < tol
+            man_dur_s = r['Man_Durations'][idx_m]
+            
+            # IBI Alignment (IBIs are 1 shorter than Bouts)
+            if len(r['Man_IBIs']) > 0 and len(r['Man_Speeds']) > 1:
+                ibi_speeds = r['Man_Speeds'][:-1]
+                idx_m_ibi = np.abs(ibi_speeds - speed) < tol
+                man_ibi_s = r['Man_IBIs'][idx_m_ibi]
+            else:
+                man_ibi_s = np.array([])
+
+            # Filter Megabouts Data
+            idx_mega = np.abs(r['Mega_Speeds'] - speed) < tol
+            mega_dur_s = r['Mega_Durations'][idx_mega]
+            
+            if len(r['Mega_IBIs']) > 0 and len(r['Mega_Speeds']) > 1:
+                ibi_speeds_mega = r['Mega_Speeds'][:-1]
+                idx_mega_ibi = np.abs(ibi_speeds_mega - speed) < tol
+                mega_ibi_s = r['Mega_IBIs'][idx_mega_ibi]
+            else:
+                mega_ibi_s = np.array([])
+
+            # Compute Histograms (Subset)
+            h_man_s = calculate_histogram_cols(man_dur_s, man_ibi_s, BIN_EDGES)
+            h_mega_s = calculate_histogram_cols(mega_dur_s, mega_ibi_s, BIN_EDGES)
+            
+            row_s = {
+                'FishID': r['FishID'], 'Species': r['Species'], 'Age': r['Age'], 'Rig': r['Rig'],
+                'Speed': speed,
+                
+                'Manual_Bout_Counts': h_man_s['Bout_Counts'],
+                'Manual_Bout_Prob':   h_man_s['Bout_Prob'],
+                'Manual_IBI_Counts':  h_man_s['IBI_Counts'],
+                'Manual_IBI_Prob':    h_man_s['IBI_Prob'],
+                
+                'Megabouts_Bout_Counts': h_mega_s['Bout_Counts'],
+                'Megabouts_Bout_Prob':   h_mega_s['Bout_Prob'],
+                'Megabouts_IBI_Counts':  h_mega_s['IBI_Counts'],
+                'Megabouts_IBI_Prob':    h_mega_s['IBI_Prob']
+            }
+            rows_speed.append(row_s)
+
+    df_byspeed = pd.DataFrame(rows_speed)
+
+    # --- E. SAVE RESULTS ---
+    if SAVE_FLAG:
+        f_all = os.path.join(SAVE_PATH, 'Analysis_All_Histograms.pkl')
+        f_speed = os.path.join(SAVE_PATH, 'Analysis_BySpeed_Histograms.pkl')
+        
+        print(f"Saving {f_all}...")
+        df_all.to_pickle(f_all)
+        
+        print(f"Saving {f_speed}...")
+        df_byspeed.to_pickle(f_speed)
+        
+        print("Analysis Complete.")
+
+if __name__ == "__main__":
+    main()
