@@ -10,6 +10,7 @@ the original MATLAB histogram data structures.
 """
 
 import os
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import warnings
@@ -17,7 +18,7 @@ from scipy import signal
 
 # --- CONFIGURATION ---
 ROOT_PATH = r'F:\OMR_Ontogeny_VOL' # Update specific root path
-SAVE_PATH = r'results' # Folder to save output .pkl files
+SAVE_PATH = Path("dataset") # Folder to save output .pkl files
 SAVE_FLAG = True # Set to True to save the results
 
 # Analysis Parameters (Matching MATLAB 'make_bout_histograms')
@@ -407,13 +408,13 @@ def main():
             tol = 1e-6 # Floating point tolerance
             
             # Filter Manual Data
-            idx_manual = np.abs(r['Man_Speeds'] - speed) < tol
+            idx_manual = np.abs(r['Man_Speeds'] - speed) < tol # of the X bouts, which ones started when the stimulus speed was X
             man_dur_s = r['Man_Durations'][idx_manual]
             
             # IBI Alignment (IBIs are 1 shorter than Bouts)
             if len(r['Man_IBIs']) > 0 and len(r['Man_Speeds']) > 1:
                 ibi_speeds = r['Man_Speeds'][:-1]
-                idx_manual_ibi = np.abs(ibi_speeds - speed) < tol
+                idx_manual_ibi = np.abs(ibi_speeds - speed) < tol # of the X ibi, which ones ocurred when the stimulus speed was X
                 man_ibi_s = r['Man_IBIs'][idx_manual_ibi]
             else:
                 man_ibi_s = np.array([])
@@ -430,8 +431,8 @@ def main():
                 mega_ibi_s = np.array([])
 
             # Compute Histograms (Subset)
-            h_man_s = calculate_histogram_cols(man_dur_s, man_ibi_s, BIN_EDGES)
-            h_mega_s = calculate_histogram_cols(mega_dur_s, mega_ibi_s, BIN_EDGES)
+            hist_manual_speed = calculate_histogram_cols(man_dur_s, man_ibi_s, BIN_EDGES)
+            hist_megabouts_speed = calculate_histogram_cols(mega_dur_s, mega_ibi_s, BIN_EDGES)
             
             row_s = {
                 'FishID': r['FishID'],
@@ -440,15 +441,15 @@ def main():
                 'Rig': r['Rig'],
                 'Speed': speed,
                 
-                'Manual_Bout_Counts': h_man_s['Bout_Counts'],
-                'Manual_Bout_Prob':   h_man_s['Bout_Prob'],
-                'Manual_IBI_Counts':  h_man_s['IBI_Counts'],
-                'Manual_IBI_Prob':    h_man_s['IBI_Prob'],
+                'Manual_Bout_Counts': hist_manual_speed['Bout_Counts'],
+                'Manual_Bout_Prob':   hist_manual_speed['Bout_Prob'],
+                'Manual_IBI_Counts':  hist_manual_speed['IBI_Counts'],
+                'Manual_IBI_Prob':    hist_manual_speed['IBI_Prob'],
                 
-                'Megabouts_Bout_Counts': h_mega_s['Bout_Counts'],
-                'Megabouts_Bout_Prob':   h_mega_s['Bout_Prob'],
-                'Megabouts_IBI_Counts':  h_mega_s['IBI_Counts'],
-                'Megabouts_IBI_Prob':    h_mega_s['IBI_Prob']
+                'Megabouts_Bout_Counts': hist_megabouts_speed['Bout_Counts'],
+                'Megabouts_Bout_Prob':   hist_megabouts_speed['Bout_Prob'],
+                'Megabouts_IBI_Counts':  hist_megabouts_speed['IBI_Counts'],
+                'Megabouts_IBI_Prob':    hist_megabouts_speed['IBI_Prob']
             }
             rows_speed.append(row_s)
 
