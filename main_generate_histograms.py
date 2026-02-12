@@ -16,26 +16,26 @@ import warnings
 from scipy import signal
 
 # --- CONFIGURATION ---
-ROOT_PATH = r'F:\OMR_Ontogeny_VOL' # Update to your specific root path
-SAVE_PATH = r'results'             # Folder to save output .pkl files
-SAVE_FLAG = True                   # Set to True to save the results
+ROOT_PATH = r'F:\OMR_Ontogeny_VOL' # Update specific root path
+SAVE_PATH = r'results' # Folder to save output .pkl files
+SAVE_FLAG = True # Set to True to save the results
 
 # Analysis Parameters (Matching MATLAB 'make_bout_histograms')
-FPS = 700.0
-BIN_SIZE = 0.05                    # Seconds
-MAX_DURATION = 2.0                 # Seconds
+FPS = 700.0 # acquisition frame rate
+BIN_SIZE = 0.05 # Seconds
+MAX_DURATION = 2.0 # Seconds
 BIN_EDGES = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)
 
 # Megabouts Flags
-RUN_MEGABOUTS = True               # Set False to only analyze existing manual data
+RUN_MEGABOUTS = True # Set False to only analyze existing manual data
 
 # Default Parameters for Detection
 # (Can be overridden per-fish if needed in the recompute_bouts function)
 MEGABOUTS_DEFAULTS = {
-    'bout_thresh': 0.1,            # Sensitivity threshold (Pipeline default)
-    'min_duration_frames': 40,     # Minimum duration in frames (Pipeline default)
-    'savgol_window_ms': 15,        # [NEW] Smoothing window (Library Default)
-    'tail_speed_filter_ms': 100,   # [NEW] Vigor filter size (Library Default)
+    'bout_thresh': 0.1, # Sensitivity threshold (Pipeline default)
+    'min_duration_frames': 40, # Minimum duration in frames (Pipeline default)
+    'savgol_window_ms': 15, # [NEW] Smoothing window (Library Default)
+    'tail_speed_filter_ms': 100, # [NEW] Vigor filter size (Library Default)
 }
 
 # Conditional Import for Megabouts
