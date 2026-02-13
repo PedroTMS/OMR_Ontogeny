@@ -13,8 +13,6 @@ import os
 from pathlib import Path
 import pandas as pd
 import numpy as np
-import warnings
-from scipy import signal
 
 # --- CONFIGURATION ---
 ROOT_PATH = r'F:\OMR_Ontogeny_VOL' # Update specific root path
