@@ -24,6 +24,7 @@ FPS = 700.0 # acquisition frame rate
 BIN_SIZE = 0.05 # Seconds
 MAX_DURATION = 2.0 # Seconds
 BIN_EDGES = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)
+ALLOWED_SPEEDS = [0.0, 3.0, 5.0, 10.0, 15.0, 30.0] # Global fixed speeds
 
 # Megabouts Flags
 RUN_MEGABOUTS = True # Set False to only analyze existing manual data
@@ -53,46 +54,46 @@ except ImportError:
 # 1. HELPER FUNCTIONS
 # ==============================================================================
 
-def get_unique_speeds_from_logs(root_path):
-    """
-    Scans all _MergedLog.pickle files in the directory structure to 
-    dynamically extract the set of unique stimulus speeds used in experiments.
+# def get_unique_speeds_from_logs(root_path):
+#     """
+#     Scans all _MergedLog.pickle files in the directory structure to 
+#     dynamically extract the set of unique stimulus speeds used in experiments.
     
-    Args:
-        root_path (str): The root directory to scan.
+#     Args:
+#         root_path (str): The root directory to scan.
         
-    Returns:
-        list: A sorted list of unique speeds (e.g., [0.0, 3.0, 5.0, ...])
-    """
-    unique_speeds = set()
-    print(f"Scanning {root_path} to determine ALLOWED_SPEEDS...")
+#     Returns:
+#         list: A sorted list of unique speeds (e.g., [0.0, 3.0, 5.0, ...])
+#     """
+#     unique_speeds = set()
+#     print(f"Scanning {root_path} to determine ALLOWED_SPEEDS...")
 
-    for root, dirs, files in os.walk(root_path):
-        merged_files = [f for f in files if f.endswith('_MergedLog.pickle')]
+#     for root, dirs, files in os.walk(root_path):
+#         merged_files = [f for f in files if f.endswith('_MergedLog.pickle')]
         
-        for f in merged_files:
-            file_path = os.path.join(root, f)
-            try:
-                # We interpret the pickle partially or fully. 
-                # Reading the full pickle is safer to ensure schema compliance.
-                df = pd.read_pickle(file_path)
+#         for f in merged_files:
+#             file_path = os.path.join(root, f)
+#             try:
+#                 # We interpret the pickle partially or fully. 
+#                 # Reading the full pickle is safer to ensure schema compliance.
+#                 df = pd.read_pickle(file_path)
                 
-                if 'grating_speed' in df.columns:
-                    # Drop NaNs and get unique values
-                    raw_speeds = df['grating_speed'].dropna().unique()
+#                 if 'grating_speed' in df.columns:
+#                     # Drop NaNs and get unique values
+#                     raw_speeds = df['grating_speed'].dropna().unique()
                     
-                    # Round to 1 decimal place to avoid floating-point mismatch 
-                    rounded_speeds = np.round(raw_speeds, 1)
+#                     # Round to 1 decimal place to avoid floating-point mismatch 
+#                     rounded_speeds = np.round(raw_speeds, 1)
                     
-                    unique_speeds.update(rounded_speeds)
-            except Exception as e:
-                continue
+#                     unique_speeds.update(rounded_speeds)
+#             except Exception as e:
+#                 continue
 
-    # Filter out negative artifacts if any, and sort
-    final_speeds = sorted([s for s in list(unique_speeds) if s >= 0])
+#     # Filter out negative artifacts if any, and sort
+#     final_speeds = sorted([s for s in list(unique_speeds) if s >= 0])
     
-    print(f"-> Dynamic speeds detected: {final_speeds}")
-    return final_speeds
+#     print(f"-> Dynamic speeds detected: {final_speeds}")
+#     return final_speeds
 
 
 def parse_filename_info(filename, fish_counter):
@@ -239,10 +240,10 @@ def main():
         os.makedirs(SAVE_PATH)
         
     # Dynamically determine speeds
-    allowed_speeds = get_unique_speeds_from_logs(ROOT_PATH)
-    if not allowed_speeds:
-        print("Warning: No speeds found. Using default [0, 3, 5, 10, 15, 30].")
-        allowed_speeds = [0, 3, 5, 10, 15, 30] # expected speeds from ontogeny_omr protocol
+    # allowed_speeds = get_unique_speeds_from_logs(ROOT_PATH)
+    # if not allowed_speeds:
+    #     print("Warning: No speeds found. Using default [0, 3, 5, 10, 15, 30].")
+    #     allowed_speeds = [0, 3, 5, 10, 15, 30] # expected speeds from ontogeny_omr protocol
         
     fish_records = [] # Storage for intermediate results
     fish_counter = 1  # Initialize sequential fish counter to add a FishID to filename format
@@ -328,15 +329,16 @@ def main():
                         # We instantiate the preprocessor with our config
                         preprocessor = TailPreprocessing(tailprocessing_config)
                         
-                        # Assuming .process() or .run() takes the raw array and returns object with .tail_vigor
-                        # We use tracking data container to be safe
+                        # Load data into Tracking Object
                         tracking_data = TailTrackingData.from_posture(tail_angle=tail_data)
-                        processed_data = preprocessor.run(tracking_data) 
+
+                        # Run Preprocessing
+                        processed_data = preprocessor.preprocess_tail_df(tracking_data.tail_df) 
                         
                         # B. Segmentation: Get Bouts
                         # Segmenter takes the calculated tail vigor
                         segmenter = TailSegmentation(tailsegmnt_cfg)
-                        results = segmenter.segment(processed_data.tail_vigor)
+                        results = segmenter.segment(processed_data.vigor)
                         
                         # 4. Extract Frames
                         mega_starts = np.array(results.onset)
@@ -402,7 +404,7 @@ def main():
     
     rows_speed = []
     for r in fish_records:
-        for speed in allowed_speeds:
+        for speed in ALLOWED_SPEEDS: # [CHANGED] Use global constant instead of 'allowed_speeds'
             tol = 1e-6 # Floating point tolerance
             
             # Filter Manual Data
