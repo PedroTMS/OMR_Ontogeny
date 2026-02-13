@@ -330,7 +330,7 @@ def main():
                         
                         # Assuming .process() or .run() takes the raw array and returns object with .tail_vigor
                         # We use tracking data container to be safe
-                        tracking_data = TailTrackingData.from_posture(tail_data, fps=FPS)
+                        tracking_data = TailTrackingData.from_posture(tail_angle=tail_data)
                         processed_data = preprocessor.run(tracking_data) 
                         
                         # B. Segmentation: Get Bouts
