@@ -303,16 +303,33 @@ def main():
                 mega_durs, mega_ibis, mega_speed_tags = [], [], []
                 
                 if RUN_MEGABOUTS and MEGABOUTS_AVAILABLE:
-                    # Extract Tail Matrix
-                    # Select only the first 10 tail segments (0-9) to match Megabouts expectation
-                    target_cols = [f'tail_angle_{i}' for i in range(10)]
-                    tail_cols = [c for c in target_cols if c in df.columns]
-
-                    if len(tail_cols) == 10:
-                        tail_data = df[tail_cols].values
+                    # --- DYNAMIC COLUMN DETECTION ---
+                    # Format 1: Underscores (Newer files, e.g., 'tail_angle_0')
+                    cols_underscore = [f'tail_angle_{i}' for i in range(10)]
+                    # Format 2: Dots (Older files, e.g., 'tail_angle.0')
+                    cols_dot = [f'tail_angle.{i}' for i in range(10)]
+                    
+                    selected_cols = []
+                    
+                    # Check Format 1
+                    if all(c in df.columns for c in cols_underscore):
+                        selected_cols = cols_underscore
+                    # Check Format 2
+                    elif all(c in df.columns for c in cols_dot):
+                        selected_cols = cols_dot
+                    
+                    # Execute if valid columns found
+                    if len(selected_cols) == 10:
+                        tail_data = df[selected_cols].values
                         
-                        # 1. Configure Preprocessing (NEW Parameters)
-                        # Controls smoothing and vigor calculation
+                        # [OPTIMIZATION] Bypass TailTrackingData overhead
+                        # Megabouts expects columns named 'angle_0'...'angle_9' regardless of source name
+                        tail_df_lite = pd.DataFrame(
+                            tail_data, 
+                            columns=[f"angle_{i}" for i in range(10)]
+                        )
+                        
+                        # 1. Configure Preprocessing
                         tailprocessing_config = TailPreprocessingConfig(
                             fps=FPS,
                             savgol_window_ms=MEGABOUTS_DEFAULTS['savgol_window_ms'],
@@ -320,7 +337,6 @@ def main():
                         )
                         
                         # 2. Configure Segmentation
-                        # Controls thresholding logic
                         # Note: Library expects ms, we convert from frames if needed
                         min_dur_ms = (MEGABOUTS_DEFAULTS['min_duration_frames'] * 1000) / FPS
                         
@@ -331,23 +347,13 @@ def main():
                         )
                         
                         # 3. Execution Pipeline
-                        # A. Preprocessing: Get Tail Vigor
-                        # We instantiate the preprocessor with our config
                         print("    [2/3] Running Megabouts Preprocessing...")
                         preprocessor = TailPreprocessing(tailprocessing_config)
-
-                        # Megabouts expects columns named 'angle_0'...'angle_9'
-                        # We recycle the existing dataframe logic to create a lightweight view
-                        tail_df_lite = pd.DataFrame(
-                            tail_data, 
-                            columns=[f"angle_{i}" for i in range(10)]
-                        )
-
+                        
                         # Run Preprocessing
                         processed_data = preprocessor.preprocess_tail_df(tail_df_lite)
                         
-                        # B. Segmentation: Get Bouts
-                        # Segmenter takes the calculated tail vigor
+                        # B. Segmentation
                         segmenter = TailSegmentation(tailsegmnt_cfg)
                         results = segmenter.segment(processed_data.vigor)
                         
@@ -357,11 +363,10 @@ def main():
                         
                         # Compute Metrics
                         mega_durs, mega_ibis, mega_speed_tags = get_bout_metrics(mega_starts, mega_ends, FPS, stim_speeds)
-
+                    
                     else:
                         # [DEBUG] Print why it failed
-                        print(f"    [!] SKIPPING MEGABOUTS: Found {len(tail_cols)}/10 columns.")
-                        # Print the first few columns of the dataframe to see what they look like
+                        print("    [!] SKIPPING MEGABOUTS: Could not find 10 sequential tail columns.")
                         tail_related = [c for c in df.columns if 'tail' in c]
                         print(f"        Available tail columns: {tail_related[:5]} ...")
                 
