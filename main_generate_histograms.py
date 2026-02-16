@@ -304,7 +304,10 @@ def main():
                 
                 if RUN_MEGABOUTS and MEGABOUTS_AVAILABLE:
                     # Extract Tail Matrix
-                    tail_cols = [c for c in df.columns if 'tail_angle' in c]
+                    # Select only the first 10 tail segments (0-9) to match Megabouts expectation
+                    target_cols = [f'tail_angle_{i}' for i in range(10)]
+                    # tail_cols = [c for c in df.columns if 'tail_angle' in c]
+                    tail_cols = [c for c in target_cols if c in df.columns]
                     if len(tail_cols) > 0:
                         tail_data = df[tail_cols].values
                         
@@ -335,7 +338,7 @@ def main():
                         
                         # Load data into Tracking Object
                         # tracking_data = TailTrackingData.from_posture(tail_angle=tail_data)
-                        
+
                         # Megabouts expects columns named 'angle_0'...'angle_9'
                         # We recycle the existing dataframe logic to create a lightweight view
                         tail_df_lite = pd.DataFrame(
