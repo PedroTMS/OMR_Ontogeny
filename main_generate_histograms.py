@@ -306,8 +306,8 @@ def main():
                     # Extract Tail Matrix
                     # Select only the first 10 tail segments (0-9) to match Megabouts expectation
                     target_cols = [f'tail_angle_{i}' for i in range(10)]
-                    # tail_cols = [c for c in df.columns if 'tail_angle' in c]
                     tail_cols = [c for c in target_cols if c in df.columns]
+
                     if len(tail_cols) == 10:
                         tail_data = df[tail_cols].values
                         
@@ -335,9 +335,6 @@ def main():
                         # We instantiate the preprocessor with our config
                         print("    [2/3] Running Megabouts Preprocessing...")
                         preprocessor = TailPreprocessing(tailprocessing_config)
-                        
-                        # Load data into Tracking Object
-                        # tracking_data = TailTrackingData.from_posture(tail_angle=tail_data)
 
                         # Megabouts expects columns named 'angle_0'...'angle_9'
                         # We recycle the existing dataframe logic to create a lightweight view
@@ -347,7 +344,6 @@ def main():
                         )
 
                         # Run Preprocessing
-                        # processed_data = preprocessor.preprocess_tail_df(tracking_data.tail_df)
                         processed_data = preprocessor.preprocess_tail_df(tail_df_lite)
                         
                         # B. Segmentation: Get Bouts
@@ -361,6 +357,13 @@ def main():
                         
                         # Compute Metrics
                         mega_durs, mega_ibis, mega_speed_tags = get_bout_metrics(mega_starts, mega_ends, FPS, stim_speeds)
+
+                    else:
+                        # [DEBUG] Print why it failed
+                        print(f"    [!] SKIPPING MEGABOUTS: Found {len(tail_cols)}/10 columns.")
+                        # Print the first few columns of the dataframe to see what they look like
+                        tail_related = [c for c in df.columns if 'tail' in c]
+                        print(f"        Available tail columns: {tail_related[:5]} ...")
                 
                 # --- STORE RAW RECORD ---
                 record = {
