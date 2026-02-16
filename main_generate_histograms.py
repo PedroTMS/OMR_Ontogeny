@@ -308,7 +308,7 @@ def main():
                     target_cols = [f'tail_angle_{i}' for i in range(10)]
                     # tail_cols = [c for c in df.columns if 'tail_angle' in c]
                     tail_cols = [c for c in target_cols if c in df.columns]
-                    if len(tail_cols) > 0:
+                    if len(tail_cols) == 10:
                         tail_data = df[tail_cols].values
                         
                         # 1. Configure Preprocessing (NEW Parameters)
