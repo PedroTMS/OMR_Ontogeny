@@ -262,6 +262,7 @@ def main():
             meta = parse_filename_info(f, fish_counter)
             
             if meta is None:
+                print(f"  [!] SKIPPING: Could not parse metadata for {f}")
                 continue
                 
             # Valid fish found: Increment counter for next fish
@@ -269,7 +270,7 @@ def main():
             
             try:
                 # 2. Load Data
-                print(f"    [1/3] Loading data for Fish {fish_counter}...")
+                print(f"    [1/3] Loading data for Fish {meta['FishID']}...")
                 df = pd.read_pickle(file_path)
                 
                 # Validation
@@ -333,10 +334,18 @@ def main():
                         preprocessor = TailPreprocessing(tailprocessing_config)
                         
                         # Load data into Tracking Object
-                        tracking_data = TailTrackingData.from_posture(tail_angle=tail_data)
+                        # tracking_data = TailTrackingData.from_posture(tail_angle=tail_data)
+                        
+                        # Megabouts expects columns named 'angle_0'...'angle_9'
+                        # We recycle the existing dataframe logic to create a lightweight view
+                        tail_df_lite = pd.DataFrame(
+                            tail_data, 
+                            columns=[f"angle_{i}" for i in range(10)]
+                        )
 
                         # Run Preprocessing
-                        processed_data = preprocessor.preprocess_tail_df(tracking_data.tail_df) 
+                        # processed_data = preprocessor.preprocess_tail_df(tracking_data.tail_df)
+                        processed_data = preprocessor.preprocess_tail_df(tail_df_lite)
                         
                         # B. Segmentation: Get Bouts
                         # Segmenter takes the calculated tail vigor
