@@ -255,6 +255,7 @@ def main():
         merged_files = [f for f in files if f.endswith('_MergedLog.pickle')]
         
         for f in merged_files:
+            print(f"  > Found file: {f}")
             file_path = os.path.join(root, f)
             
             # 1. Parse Metadata with Counter
@@ -268,6 +269,7 @@ def main():
             
             try:
                 # 2. Load Data
+                print(f"    [1/3] Loading data for Fish {fish_counter}...")
                 df = pd.read_pickle(file_path)
                 
                 # Validation
@@ -327,6 +329,7 @@ def main():
                         # 3. Execution Pipeline
                         # A. Preprocessing: Get Tail Vigor
                         # We instantiate the preprocessor with our config
+                        print("    [2/3] Running Megabouts Preprocessing...")
                         preprocessor = TailPreprocessing(tailprocessing_config)
                         
                         # Load data into Tracking Object
@@ -362,6 +365,7 @@ def main():
                     'Mega_Speeds': mega_speed_tags
                 }
                 fish_records.append(record)
+                print(f"    [3/3] Finished Fish {meta['FishID']}. Records: {len(fish_records)}")
                 
             except Exception as e:
                 print(f"Error processing {f}: {e}")
