@@ -18,14 +18,26 @@ from pathlib import Path
 
 # --- CONFIGURATION ---
 DATASET_PATH = Path("dataset")  # Path where .pkl files are saved
-BIN_SIZE = 0.05
-MAX_DURATION = 2.0 # seconds
-BIN_CENTERS = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)[:-1] + (BIN_SIZE / 2) # Center of bins
+RESULTS_PATH = Path("results")  # Path where .png figures will be saved
+BIN_SIZE = 0.05 # Seconds (Time bin width)
+MAX_DURATION = 2.0 # Seconds (Maximum duration analyzed)
+BIN_CENTERS = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)[:-1] + (BIN_SIZE / 2) # Center of bins (Seconds)
+
+# Plotting Control
+# 0 -> plots everything manual
+# 1 -> plots everything megabouts
+# 2 -> plots for manual and then for megabouts
+PLOT_FLAG = 0 
+
+# Saving Control
+# 0 -> doesn't save anything
+# 1 -> save all generated figures as pngs in the Path('results') folder
+SAVE_FLAG = 1
 
 # Comparison Groups (Matches plothistograms_alldata.m)
 SPECIES_GROUPS = {
-    'Giant': [4, 5, 6, 7, 8, 10], # Ages to plot for Giant
-    'Tu': [4, 5, 6, 8, 10, 12, 14] # Ages to plot for Tu
+    'Giant': [4, 5, 6, 7, 8, 10], # Ages to plot for Giant (dpf)
+    'Tu': [4, 5, 6, 8, 10, 12, 14] # Ages to plot for Tu (dpf)
 }
 
 def load_data():
@@ -50,6 +62,16 @@ def load_data():
         
     return df_all, df_speed
 
+def save_figure(fig, filename):
+    """Saves the figure if SAVE_FLAG is 1."""
+    if SAVE_FLAG == 1:
+        if not RESULTS_PATH.exists():
+            RESULTS_PATH.mkdir(parents=True, exist_ok=True)
+        
+        save_path = RESULTS_PATH / f"{filename}.png"
+        print(f"Saving figure to {save_path}...")
+        fig.savefig(save_path, dpi=300, bbox_inches='tight')
+
 def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual', color=None):
     """
     Replicates plot_mean_sem_hist.m: Plots Mean +/- SEM for a specific group.
@@ -67,11 +89,12 @@ def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual'
     subset = df[(df['Species'] == species) & (df['Age'] == age)]
     
     if subset.empty:
-        print(f"No data for {species} {age}dpf")
+        # print(f"No data for {species} {age}dpf")
         return
 
     # Select Column based on metric and source (e.g., 'Manual_Bout_Prob')
     # Using Probability Density as default (useNormalized=true in MATLAB)
+    # Unit: Normalized Probability Density (Sum of all bins * BIN_SIZE ~= 1)
     col_name = f"{source}_{metric_type.capitalize()}_Prob"
     
     if col_name not in subset.columns:
@@ -79,15 +102,18 @@ def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual'
 
     # Stack arrays (N fish x M bins)
     # The data in the dataframe are lists/arrays, so we stack them into a 2D matrix
+    # Unit: Probability Density
     data_matrix = np.stack(subset[col_name].values) # stack arrays to make a matrix
     
     # Calculate Mean and SEM
+    # Unit: Probability Density
     mean = np.mean(data_matrix, axis=0)
     sem = np.std(data_matrix, axis=0) / np.sqrt(data_matrix.shape[0])
-    n = data_matrix.shape[0] # get number of lines
+    n = data_matrix.shape[0] # get number of lines (N fish)
     
     # X-Axis (Bin Centers)
     # Note: If your bins changed, ensure BIN_CENTERS matches the data length
+    # Unit: Seconds
     x = BIN_CENTERS[:len(mean)] 
     
     # Plot Shaded SEM
@@ -99,8 +125,8 @@ def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual'
     
     # Formatting
     ax.set_title(f"{source} {metric_type.upper()} Histograms")
-    ax.set_ylabel("Probability Density")
-    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Probability Density") # Unit: PDF
+    ax.set_xlabel("Time (s)") # Unit: Seconds
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize='small')
 
@@ -113,30 +139,34 @@ def plot_mean_sem_hist_speed(ax, df, species, age, speed, metric_type='bout', so
         df: DataFrame (Analysis_BySpeed_Histograms).
         species: 'Giant' or 'Tu'.
         age: Age in dpf (int).
-        speed: Stimulus speed (0, 3, 5, 10, 15, or 30).
+        speed: Stimulus speed in mm/s (0, 3, 5, 10, 15, or 30).
         metric_type: 'bout' or 'ibi'.
         source: 'Manual' or 'Megabouts'.
         color: Color for the plot line/fill.
     """
     # Filter Data (Includes Speed)
+    # Speed Unit: mm/s
     subset = df[(df['Species'] == species) & (df['Age'] == age) & (np.isclose(df['Speed'], speed))]
     
     if subset.empty:
         return
 
+    # Unit: Normalized Probability Density
     col_name = f"{source}_{metric_type.capitalize()}_Prob"
     
     data_matrix = np.stack(subset[col_name].values)
     mean = np.mean(data_matrix, axis=0)
     sem = np.std(data_matrix, axis=0) / np.sqrt(data_matrix.shape[0])
-    n = data_matrix.shape[0] # number of rows
+    n = data_matrix.shape[0] # number of rows (N fish)
+    
+    # Unit: Seconds
     x = BIN_CENTERS[:len(mean)]
     
     ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.25, linewidth=0)
-    label = f"{species} {age}dpf @ {speed} (N={n})"
+    label = f"{species} {age}dpf @ {speed} mm/s (N={n})"
     ax.plot(x, mean, color=color, linewidth=2, label=label)
     
-    ax.set_title(f"{source} {metric_type.upper()} @ Speed {speed}")
+    ax.set_title(f"{source} {metric_type.upper()} @ {speed} mm/s")
     ax.grid(True, alpha=0.3)
 
 def generate_color_palette(n_colors):
@@ -164,38 +194,44 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
         for i, age in enumerate(SPECIES_GROUPS['Giant']):
             plot_mean_sem_hist(axes[0], df_all, 'Giant', age, metric, source, colors_g[i])
         axes[0].set_title("Giant")
-        axes[0].set_xlim(0, 0.5 if metric == 'bout' else 1.0) 
+        axes[0].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Limit x-axis to 0.5s (bouts) or 1.0s (IBI)
 
         # Tu Subplot
         colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
         for i, age in enumerate(SPECIES_GROUPS['Tu']):
             plot_mean_sem_hist(axes[1], df_all, 'Tu', age, metric, source, colors_t[i])
         axes[1].set_title("Tu")
-        axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0)
+        axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Limit x-axis to 0.5s (bouts) or 1.0s (IBI)
+        
+        # Save Figure
+        save_figure(fig, f"Pooled_{metric.upper()}_{source}")
 
     # --- FIGURE 3 & 4: BY SPEED (Speed 0 Comparison) ---
     if df_speed is not None:
         for metric in ['bout', 'ibi']:
             fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
-            fig.suptitle(f"{metric.upper()} Distributions at Speed 0 ({source})", fontsize=16)
+            fig.suptitle(f"{metric.upper()} Distributions at 0 mm/s ({source})", fontsize=16)
             
             # Giant Speed 0
             colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
             for i, age in enumerate(SPECIES_GROUPS['Giant']):
                 plot_mean_sem_hist_speed(axes[0], df_speed, 'Giant', age, 0, metric, source, colors_g[i])
-            axes[0].set_title("Giant (Speed 0)")
-            axes[0].set_xlim(0, 0.5 if metric == 'bout' else 1.0)
+            axes[0].set_title("Giant (0 mm/s)")
+            axes[0].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Seconds
             
             # Tu Speed 0
             colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
             for i, age in enumerate(SPECIES_GROUPS['Tu']):
                 plot_mean_sem_hist_speed(axes[1], df_speed, 'Tu', age, 0, metric, source, colors_t[i])
-            axes[1].set_title("Tu (Speed 0)")
-            axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0)
+            axes[1].set_title("Tu (0 mm/s)")
+            axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Seconds
+            
+            # Save Figure
+            save_figure(fig, f"Speed0_{metric.upper()}_{source}")
 
     # --- FIGURE 5: GRID PLOT (All Speeds) ---
     if df_speed is not None:
-        speeds = [0, 3, 5, 10, 15, 30]
+        speeds = [0, 3, 5, 10, 15, 30] # Units: mm/s
         
         fig, axes = plt.subplots(2, 6, figsize=(20, 8), constrained_layout=True, sharex=True, sharey='row')
         fig.suptitle(f"Bout Duration Across All Speeds ({source})", fontsize=16)
@@ -206,8 +242,8 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
             ax = axes[0, col]
             for i, age in enumerate(SPECIES_GROUPS['Giant']):
                 plot_mean_sem_hist_speed(ax, df_speed, 'Giant', age, speed, 'bout', source, colors_g[i])
-            ax.set_title(f"Giant @ {speed}")
-            ax.set_xlim(0, 0.5)
+            ax.set_title(f"Giant @ {speed} mm/s")
+            ax.set_xlim(0, 0.5) # Seconds
             if col == 0: ax.legend(fontsize='xx-small')
 
         # Row 1: Tu
@@ -216,8 +252,11 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
             ax = axes[1, col]
             for i, age in enumerate(SPECIES_GROUPS['Tu']):
                 plot_mean_sem_hist_speed(ax, df_speed, 'Tu', age, speed, 'bout', source, colors_t[i])
-            ax.set_title(f"Tu @ {speed}")
-            ax.set_xlim(0, 0.5)
+            ax.set_title(f"Tu @ {speed} mm/s")
+            ax.set_xlim(0, 0.5) # Seconds
+            
+        # Save Figure
+        save_figure(fig, f"Grid_AllSpeeds_Bout_{source}")
             
     plt.show()
 
@@ -229,14 +268,24 @@ def main():
         print("Cannot proceed without main histogram data.")
         return
 
-    # 2. Generate Plots
-    # You can now call it for Manual, Megabouts, or both!
+    # 2. Generate Plots based on Flag
+    # PLOT_FLAG defined in CONFIGURATION: 0=Manual, 1=Megabouts, 2=Both
     
-    # Generate Manual Plots
-    replicate_plothistograms_alldata(df_all, df_speed, source='Manual')
+    if PLOT_FLAG == 0:
+        # Plot Manual Only
+        replicate_plothistograms_alldata(df_all, df_speed, source='Manual')
+        
+    elif PLOT_FLAG == 1:
+        # Plot Megabouts Only
+        replicate_plothistograms_alldata(df_all, df_speed, source='Megabouts')
+        
+    elif PLOT_FLAG == 2:
+        # Plot Manual then Megabouts
+        replicate_plothistograms_alldata(df_all, df_speed, source='Manual')
+        replicate_plothistograms_alldata(df_all, df_speed, source='Megabouts')
     
-    # Generate Megabouts Plots (Uncomment to run)
-    # replicate_plothistograms_alldata(df_all, df_speed, source='Megabouts')
+    else:
+        print(f"Invalid PLOT_FLAG: {PLOT_FLAG}. Use 0 (Manual), 1 (Megabouts), or 2 (Both).")
     
     print("Done.")
 
