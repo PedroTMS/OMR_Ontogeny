@@ -46,7 +46,6 @@ MULTIPLIER = 8.0 # value to multiply to the median
 
 # Conditional Import for Megabouts
 try:
-    from megabouts.tracking_data import TailTrackingData
     from megabouts.segmentation import TailSegmentation
     from megabouts.preprocessing.tail_preprocessing import TailPreprocessing
     from megabouts.config.segmentation_config import TailSegmentationConfig
