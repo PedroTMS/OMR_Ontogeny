@@ -244,7 +244,8 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
                 plot_mean_sem_hist_speed(ax, df_speed, 'Giant', age, speed, 'bout', source, colors_g[i])
             ax.set_title(f"Giant @ {speed} mm/s")
             ax.set_xlim(0, 0.5) # Seconds
-            if col == 0: ax.legend(fontsize='xx-small')
+            if col == 0:
+                ax.legend(fontsize='xx-small')
 
         # Row 1: Tu
         colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
