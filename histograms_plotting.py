@@ -1,0 +1,244 @@
+# Code file to make plots from histogram data
+"""
+This code replicates the original MATLAB plotting logic to generate Mean +/- SEM
+histograms for behavioral metrics (Bout Duration, Interbout Interval). It loads
+the 'Analysis_All_Histograms.pkl' and 'Analysis_BySpeed_Histograms.pkl' files and
+generates comparative figures between Species (Giant vs Tu) across developmental
+stages and stimulus speeds. The plotting functions directly mirror the functionality
+of 'plot_mean_sem_hist.m' and 'plothistograms_alldata.m'.
+"""
+
+
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+
+# --- CONFIGURATION ---
+DATASET_PATH = Path("dataset")  # Path where .pkl files are saved
+BIN_SIZE = 0.05
+MAX_DURATION = 2.0 # seconds
+BIN_CENTERS = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)[:-1] + (BIN_SIZE / 2) # Center of bins
+
+# Comparison Groups (Matches plothistograms_alldata.m)
+SPECIES_GROUPS = {
+    'Giant': [4, 5, 6, 7, 8, 10], # Ages to plot for Giant
+    'Tu': [4, 5, 6, 8, 10, 12, 14] # Ages to plot for Tu
+}
+
+def load_data():
+    """Loads the analysis dataframes if they exist."""
+    f_all = DATASET_PATH / 'Analysis_All_Histograms.pkl'
+    f_speed = DATASET_PATH / 'Analysis_BySpeed_Histograms.pkl'
+    
+    df_all = None
+    df_speed = None
+    
+    if f_all.exists():
+        print(f"Loading {f_all}...")
+        df_all = pd.read_pickle(f_all)
+    else:
+        print(f"Warning: {f_all} not found.")
+
+    if f_speed.exists():
+        print(f"Loading {f_speed}...")
+        df_speed = pd.read_pickle(f_speed)
+    else:
+        print(f"Warning: {f_speed} not found.")
+        
+    return df_all, df_speed
+
+def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual', color=None):
+    """
+    Replicates plot_mean_sem_hist.m: Plots Mean +/- SEM for a specific group.
+    
+    Args:
+        ax: Matplotlib axes to plot on.
+        df: DataFrame (Analysis_All_Histograms).
+        species: 'Giant' or 'Tu'.
+        age: Age in dpf (int).
+        metric_type: 'bout' or 'ibi'.
+        source: 'Manual' or 'Megabouts'.
+        color: Color for the plot line/fill.
+    """
+    # Filter Data
+    subset = df[(df['Species'] == species) & (df['Age'] == age)]
+    
+    if subset.empty:
+        print(f"No data for {species} {age}dpf")
+        return
+
+    # Select Column based on metric and source (e.g., 'Manual_Bout_Prob')
+    # Using Probability Density as default (useNormalized=true in MATLAB)
+    col_name = f"{source}_{metric_type.capitalize()}_Prob"
+    
+    if col_name not in subset.columns:
+        return
+
+    # Stack arrays (N fish x M bins)
+    # The data in the dataframe are lists/arrays, so we stack them into a 2D matrix
+    data_matrix = np.stack(subset[col_name].values) # stack arrays to make a matrix
+    
+    # Calculate Mean and SEM
+    mean = np.mean(data_matrix, axis=0)
+    sem = np.std(data_matrix, axis=0) / np.sqrt(data_matrix.shape[0])
+    n = data_matrix.shape[0] # get number of lines
+    
+    # X-Axis (Bin Centers)
+    # Note: If your bins changed, ensure BIN_CENTERS matches the data length
+    x = BIN_CENTERS[:len(mean)] 
+    
+    # Plot Shaded SEM
+    ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.25, linewidth=0)
+    
+    # Plot Mean Line
+    label = f"{species} {age}dpf (N={n})"
+    ax.plot(x, mean, color=color, linewidth=2, label=label)
+    
+    # Formatting
+    ax.set_title(f"{source} {metric_type.upper()} Histograms")
+    ax.set_ylabel("Probability Density")
+    ax.set_xlabel("Time (s)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize='small')
+
+def plot_mean_sem_hist_speed(ax, df, species, age, speed, metric_type='bout', source='Manual', color=None):
+    """
+    Replicates plot_mean_sem_hist_speed.m: Plots Mean +/- SEM for a specific speed group.
+
+    Args:
+        ax: Matplotlib axes to plot on.
+        df: DataFrame (Analysis_BySpeed_Histograms).
+        species: 'Giant' or 'Tu'.
+        age: Age in dpf (int).
+        speed: Stimulus speed (0, 3, 5, 10, 15, or 30).
+        metric_type: 'bout' or 'ibi'.
+        source: 'Manual' or 'Megabouts'.
+        color: Color for the plot line/fill.
+    """
+    # Filter Data (Includes Speed)
+    subset = df[(df['Species'] == species) & (df['Age'] == age) & (np.isclose(df['Speed'], speed))]
+    
+    if subset.empty:
+        return
+
+    col_name = f"{source}_{metric_type.capitalize()}_Prob"
+    
+    data_matrix = np.stack(subset[col_name].values)
+    mean = np.mean(data_matrix, axis=0)
+    sem = np.std(data_matrix, axis=0) / np.sqrt(data_matrix.shape[0])
+    n = data_matrix.shape[0] # number of rows
+    x = BIN_CENTERS[:len(mean)]
+    
+    ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.25, linewidth=0)
+    label = f"{species} {age}dpf @ {speed} (N={n})"
+    ax.plot(x, mean, color=color, linewidth=2, label=label)
+    
+    ax.set_title(f"{source} {metric_type.upper()} @ Speed {speed}")
+    ax.grid(True, alpha=0.3)
+
+def generate_color_palette(n_colors):
+    """Generates a list of distinct colors."""
+    return sns.color_palette("husl", n_colors)
+
+def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
+    """
+    Replicates the figures generated in plothistograms_alldata.m
+    Args:
+        source: 'Manual' or 'Megabouts'
+    """
+    if df_all is None:
+        return
+
+    print(f"--- Generating Plots for Source: {source} ---")
+
+    # --- FIGURE 1 & 2: POOLED BOUTS & IBI (By Age) ---
+    for metric in ['bout', 'ibi']:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
+        fig.suptitle(f"Pooled {metric.upper()} Distributions ({source})", fontsize=16)
+        
+        # Giant Subplot
+        colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
+        for i, age in enumerate(SPECIES_GROUPS['Giant']):
+            plot_mean_sem_hist(axes[0], df_all, 'Giant', age, metric, source, colors_g[i])
+        axes[0].set_title("Giant")
+        axes[0].set_xlim(0, 0.5 if metric == 'bout' else 1.0) 
+
+        # Tu Subplot
+        colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
+        for i, age in enumerate(SPECIES_GROUPS['Tu']):
+            plot_mean_sem_hist(axes[1], df_all, 'Tu', age, metric, source, colors_t[i])
+        axes[1].set_title("Tu")
+        axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0)
+
+    # --- FIGURE 3 & 4: BY SPEED (Speed 0 Comparison) ---
+    if df_speed is not None:
+        for metric in ['bout', 'ibi']:
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
+            fig.suptitle(f"{metric.upper()} Distributions at Speed 0 ({source})", fontsize=16)
+            
+            # Giant Speed 0
+            colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
+            for i, age in enumerate(SPECIES_GROUPS['Giant']):
+                plot_mean_sem_hist_speed(axes[0], df_speed, 'Giant', age, 0, metric, source, colors_g[i])
+            axes[0].set_title("Giant (Speed 0)")
+            axes[0].set_xlim(0, 0.5 if metric == 'bout' else 1.0)
+            
+            # Tu Speed 0
+            colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
+            for i, age in enumerate(SPECIES_GROUPS['Tu']):
+                plot_mean_sem_hist_speed(axes[1], df_speed, 'Tu', age, 0, metric, source, colors_t[i])
+            axes[1].set_title("Tu (Speed 0)")
+            axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0)
+
+    # --- FIGURE 5: GRID PLOT (All Speeds) ---
+    if df_speed is not None:
+        speeds = [0, 3, 5, 10, 15, 30]
+        
+        fig, axes = plt.subplots(2, 6, figsize=(20, 8), constrained_layout=True, sharex=True, sharey='row')
+        fig.suptitle(f"Bout Duration Across All Speeds ({source})", fontsize=16)
+        
+        # Row 0: Giant
+        colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
+        for col, speed in enumerate(speeds):
+            ax = axes[0, col]
+            for i, age in enumerate(SPECIES_GROUPS['Giant']):
+                plot_mean_sem_hist_speed(ax, df_speed, 'Giant', age, speed, 'bout', source, colors_g[i])
+            ax.set_title(f"Giant @ {speed}")
+            ax.set_xlim(0, 0.5)
+            if col == 0: ax.legend(fontsize='xx-small')
+
+        # Row 1: Tu
+        colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
+        for col, speed in enumerate(speeds):
+            ax = axes[1, col]
+            for i, age in enumerate(SPECIES_GROUPS['Tu']):
+                plot_mean_sem_hist_speed(ax, df_speed, 'Tu', age, speed, 'bout', source, colors_t[i])
+            ax.set_title(f"Tu @ {speed}")
+            ax.set_xlim(0, 0.5)
+            
+    plt.show()
+
+def main():
+    # 1. Load Data
+    df_all, df_speed = load_data()
+    
+    if df_all is None:
+        print("Cannot proceed without main histogram data.")
+        return
+
+    # 2. Generate Plots
+    # You can now call it for Manual, Megabouts, or both!
+    
+    # Generate Manual Plots
+    replicate_plothistograms_alldata(df_all, df_speed, source='Manual')
+    
+    # Generate Megabouts Plots (Uncomment to run)
+    # replicate_plothistograms_alldata(df_all, df_speed, source='Megabouts')
+    
+    print("Done.")
+
+if __name__ == "__main__":
+    main()
