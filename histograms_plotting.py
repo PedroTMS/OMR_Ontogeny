@@ -8,8 +8,6 @@ stages and stimulus speeds. The plotting functions directly mirror the functiona
 of 'plot_mean_sem_hist.m' and 'plothistograms_alldata.m'.
 """
 
-
-import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,7 +30,13 @@ PLOT_FLAG = 0
 # Saving Control
 # 0 -> doesn't save anything
 # 1 -> save all generated figures as pngs in the Path('results') folder
-SAVE_FLAG = 1
+SAVE_FLAG = 0
+
+# Metric Type Control
+# 0 -> 'bout' (Bout Duration)
+# 1 -> 'ibi'  (Interbout Interval)
+# 2 -> Both
+METRIC_TYPE_FLAG = 2
 
 # Comparison Groups (Matches plothistograms_alldata.m)
 SPECIES_GROUPS = {
@@ -94,8 +98,9 @@ def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual'
 
     # Select Column based on metric and source (e.g., 'Manual_Bout_Prob')
     # Using Probability Density as default (useNormalized=true in MATLAB)
-    # Unit: Normalized Probability Density (Sum of all bins * BIN_SIZE ~= 1)
-    col_name = f"{source}_{metric_type.capitalize()}_Prob"
+    # [FIX] Handle 'IBI' capitalization explicitly
+    metric_label = "IBI" if metric_type.lower() == "ibi" else metric_type.capitalize()
+    col_name = f"{source}_{metric_label}_Prob"
     
     if col_name not in subset.columns:
         return
@@ -124,7 +129,7 @@ def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual'
     ax.plot(x, mean, color=color, linewidth=2, label=label)
     
     # Formatting
-    ax.set_title(f"{source} {metric_type.upper()} Histograms")
+    ax.set_title(f"{source} {metric_label} Histograms")
     ax.set_ylabel("Probability Density") # Unit: PDF
     ax.set_xlabel("Time (s)") # Unit: Seconds
     ax.grid(True, alpha=0.3)
@@ -152,7 +157,13 @@ def plot_mean_sem_hist_speed(ax, df, species, age, speed, metric_type='bout', so
         return
 
     # Unit: Normalized Probability Density
-    col_name = f"{source}_{metric_type.capitalize()}_Prob"
+    # [FIX] Handle 'IBI' capitalization explicitly
+    metric_label = "IBI" if metric_type.lower() == "ibi" else metric_type.capitalize()
+    col_name = f"{source}_{metric_label}_Prob"
+    
+    if col_name not in subset.columns:
+        print(f"Warning: Column {col_name} not found.")
+        return
     
     data_matrix = np.stack(subset[col_name].values)
     mean = np.mean(data_matrix, axis=0)
@@ -166,7 +177,7 @@ def plot_mean_sem_hist_speed(ax, df, species, age, speed, metric_type='bout', so
     label = f"{species} {age}dpf @ {speed} mm/s (N={n})"
     ax.plot(x, mean, color=color, linewidth=2, label=label)
     
-    ax.set_title(f"{source} {metric_type.upper()} @ {speed} mm/s")
+    ax.set_title(f"{source} {metric_label} @ {speed} mm/s")
     ax.grid(True, alpha=0.3)
 
 def generate_color_palette(n_colors):
@@ -184,10 +195,19 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
 
     print(f"--- Generating Plots for Source: {source} ---")
 
+    # Determine Metrics to Plot based on Flag
+    if METRIC_TYPE_FLAG == 0:
+        metrics_to_plot = ['bout']
+    elif METRIC_TYPE_FLAG == 1:
+        metrics_to_plot = ['ibi']
+    else: # Default/Both
+        metrics_to_plot = ['bout', 'ibi']
+
     # --- FIGURE 1 & 2: POOLED BOUTS & IBI (By Age) ---
-    for metric in ['bout', 'ibi']:
+    for metric in metrics_to_plot:
+        metric_label = "IBI" if metric.lower() == "ibi" else metric.capitalize()
         fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
-        fig.suptitle(f"Pooled {metric.upper()} Distributions ({source})", fontsize=16)
+        fig.suptitle(f"Pooled {metric_label} Distributions ({source})", fontsize=16)
         
         # Giant Subplot
         colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
@@ -204,13 +224,14 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
         axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Limit x-axis to 0.5s (bouts) or 1.0s (IBI)
         
         # Save Figure
-        save_figure(fig, f"Pooled_{metric.upper()}_{source}")
+        save_figure(fig, f"Pooled_{metric_label}_{source}")
 
     # --- FIGURE 3 & 4: BY SPEED (Speed 0 Comparison) ---
     if df_speed is not None:
-        for metric in ['bout', 'ibi']:
+        for metric in metrics_to_plot:
+            metric_label = "IBI" if metric.lower() == "ibi" else metric.capitalize()
             fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
-            fig.suptitle(f"{metric.upper()} Distributions at 0 mm/s ({source})", fontsize=16)
+            fig.suptitle(f"{metric_label} Distributions at 0 mm/s ({source})", fontsize=16)
             
             # Giant Speed 0
             colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
@@ -227,37 +248,44 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
             axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Seconds
             
             # Save Figure
-            save_figure(fig, f"Speed0_{metric.upper()}_{source}")
+            save_figure(fig, f"Speed0_{metric_label}_{source}")
 
     # --- FIGURE 5: GRID PLOT (All Speeds) ---
     if df_speed is not None:
         speeds = [0, 3, 5, 10, 15, 30] # Units: mm/s
         
-        fig, axes = plt.subplots(2, 6, figsize=(20, 8), constrained_layout=True, sharex=True, sharey='row')
-        fig.suptitle(f"Bout Duration Across All Speeds ({source})", fontsize=16)
-        
-        # Row 0: Giant
-        colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
-        for col, speed in enumerate(speeds):
-            ax = axes[0, col]
-            for i, age in enumerate(SPECIES_GROUPS['Giant']):
-                plot_mean_sem_hist_speed(ax, df_speed, 'Giant', age, speed, 'bout', source, colors_g[i])
-            ax.set_title(f"Giant @ {speed} mm/s")
-            ax.set_xlim(0, 0.5) # Seconds
-            if col == 0:
-                ax.legend(fontsize='xx-small')
-
-        # Row 1: Tu
-        colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
-        for col, speed in enumerate(speeds):
-            ax = axes[1, col]
-            for i, age in enumerate(SPECIES_GROUPS['Tu']):
-                plot_mean_sem_hist_speed(ax, df_speed, 'Tu', age, speed, 'bout', source, colors_t[i])
-            ax.set_title(f"Tu @ {speed} mm/s")
-            ax.set_xlim(0, 0.5) # Seconds
+        # Now loops through metrics (Dynamic Grid)
+        for metric in metrics_to_plot:
+            metric_label = "IBI" if metric.lower() == "ibi" else metric.capitalize()
             
-        # Save Figure
-        save_figure(fig, f"Grid_AllSpeeds_Bout_{source}")
+            fig, axes = plt.subplots(2, 6, figsize=(20, 8), constrained_layout=True, sharex=True, sharey='row')
+            fig.suptitle(f"{metric_label} Duration Across All Speeds ({source})", fontsize=16)
+            
+            # Determine X-Limit (0.5s for Bout, 1.0s for IBI)
+            x_limit = 0.5 if metric == 'bout' else 1.0
+            
+            # Row 0: Giant
+            colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
+            for col, speed in enumerate(speeds):
+                ax = axes[0, col]
+                for i, age in enumerate(SPECIES_GROUPS['Giant']):
+                    plot_mean_sem_hist_speed(ax, df_speed, 'Giant', age, speed, metric, source, colors_g[i])
+                ax.set_title(f"Giant @ {speed} mm/s")
+                ax.set_xlim(0, x_limit) # Seconds
+                if col == 0:
+                    ax.legend(fontsize='xx-small')
+
+            # Row 1: Tu
+            colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
+            for col, speed in enumerate(speeds):
+                ax = axes[1, col]
+                for i, age in enumerate(SPECIES_GROUPS['Tu']):
+                    plot_mean_sem_hist_speed(ax, df_speed, 'Tu', age, speed, metric, source, colors_t[i])
+                ax.set_title(f"Tu @ {speed} mm/s")
+                ax.set_xlim(0, x_limit) # Seconds
+                
+            # Save Figure
+            save_figure(fig, f"Grid_AllSpeeds_{metric_label}_{source}")
             
     plt.show()
 
