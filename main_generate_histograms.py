@@ -13,11 +13,14 @@ import os
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from scipy.signal import medfilt
 
 # --- CONFIGURATION ---
 ROOT_PATH = r'F:\OMR_Ontogeny_VOL' # Update specific root path
 SAVE_PATH = Path("dataset") # Folder to save output .pkl files
 SAVE_FLAG = True # Set to True to save the results
+SAVE_NAME_ALL = 'Analysis_All_Histograms_v2.pkl'
+SAVE_NAME_BYSPEED = 'Analysis_BySpeed_Histograms_v2.pkl'
 
 # Analysis Parameters (Matching MATLAB 'make_bout_histograms')
 FPS = 700.0 # acquisition frame rate
@@ -32,11 +35,14 @@ RUN_MEGABOUTS = True # Set False to only analyze existing manual data
 # Default Parameters for Detection
 # (Can be overridden per-fish if needed in the recompute_bouts function)
 MEGABOUTS_DEFAULTS = {
-    'bout_thresh': 0.1, # Sensitivity threshold (Pipeline default)
-    'min_duration_frames': 40, # Minimum duration in frames (Pipeline default)
-    'savgol_window_ms': 15, # [NEW] Smoothing window (Library Default)
-    'tail_speed_filter_ms': 100, # [NEW] Vigor filter size (Library Default)
+    'bout_thresh': 0.1, # [IGNORED] Now calculated dynamically per fish
+    'min_duration_frames': 40, # ~57ms @ 700fps
+    'savgol_window_ms': 15, # Smoothing window (Library Default)
+    'tail_speed_filter_ms': 50, # [UPDATED] Lowered to 50ms to be more responsive
 }
+
+# For dynamic bout thresholding
+MULTIPLIER = 8.0 # value to multiply to the median
 
 # Conditional Import for Megabouts
 try:
@@ -54,47 +60,24 @@ except ImportError:
 # 1. HELPER FUNCTIONS
 # ==============================================================================
 
-# def get_unique_speeds_from_logs(root_path):
-#     """
-#     Scans all _MergedLog.pickle files in the directory structure to 
-#     dynamically extract the set of unique stimulus speeds used in experiments.
+def clean_tail_angles(df_tail): # Function to clean tracking artifacts
+    """
+    Applies aggressive cleaning to fix tracking artifacts:
+    1. Unwraps angles (fixes 180->-180 degree jumps).
+    2. Median filters (removes 1-frame 'teleportation' spikes).
+    """
+    angles = df_tail.values.copy()
     
-#     Args:
-#         root_path (str): The root directory to scan.
-        
-#     Returns:
-#         list: A sorted list of unique speeds (e.g., [0.0, 3.0, 5.0, ...])
-#     """
-#     unique_speeds = set()
-#     print(f"Scanning {root_path} to determine ALLOWED_SPEEDS...")
-
-#     for root, dirs, files in os.walk(root_path):
-#         merged_files = [f for f in files if f.endswith('_MergedLog.pickle')]
-        
-#         for f in merged_files:
-#             file_path = os.path.join(root, f)
-#             try:
-#                 # We interpret the pickle partially or fully. 
-#                 # Reading the full pickle is safer to ensure schema compliance.
-#                 df = pd.read_pickle(file_path)
-                
-#                 if 'grating_speed' in df.columns:
-#                     # Drop NaNs and get unique values
-#                     raw_speeds = df['grating_speed'].dropna().unique()
-                    
-#                     # Round to 1 decimal place to avoid floating-point mismatch 
-#                     rounded_speeds = np.round(raw_speeds, 1)
-                    
-#                     unique_speeds.update(rounded_speeds)
-#             except Exception as e:
-#                 continue
-
-#     # Filter out negative artifacts if any, and sort
-#     final_speeds = sorted([s for s in list(unique_speeds) if s >= 0])
+    # 1. Unwrap Angles (Fix 180->-180 jumps)
+    # This ensures a move from 3.14 to -3.14 is treated as a small change
+    angles = np.unwrap(angles, axis=0)
     
-#     print(f"-> Dynamic speeds detected: {final_speeds}")
-#     return final_speeds
-
+    # 2. Median Filter (Fix Teleportation Spikes)
+    # Kernel=5 removes short glitches while preserving real bouts
+    for i in range(angles.shape[1]):
+        angles[:, i] = medfilt(angles[:, i], kernel_size=5)
+        
+    return pd.DataFrame(angles, columns=df_tail.columns)
 
 def parse_filename_info(filename, fish_counter):
     """
@@ -127,8 +110,8 @@ def parse_filename_info(filename, fish_counter):
         # Based on structure: ..._Giant(8)_Tank2(7)_C10(6)_04dpf(5)_P1(4)_75(3)_66(2)_Atlas000(1)
         
         meta = {
-            'FishID': fish_id_str,           # Generated ID
-            'Species': parts[-8],            # 'Giant'
+            'FishID': fish_id_str, # Generated ID
+            'Species': parts[-8], # 'Giant'
             'Age': int(parts[-5].replace('dpf', '')), # '04dpf' -> 4
             
             # Extract Rig ('Atlas000' -> 'Atlas')
@@ -168,7 +151,7 @@ def get_bout_metrics(starts, ends, fps, stim_speed_array):
         
     # 3. Stimulus Speed Association
     # Assign speed based on the frame where the bout STARTS.
-    # We clip indices to be safe, though valid tracking implies valid frames.
+    # Clip indices to be safe, though valid tracking implies valid frames.
     safe_indices = np.clip(starts.astype(int), 0, len(stim_speed_array) - 1)
     bout_speeds = stim_speed_array[safe_indices] # stimulus speed during each bout
     
@@ -238,13 +221,7 @@ def main():
     # --- A. INITIALIZATION ---
     if not os.path.exists(SAVE_PATH):
         os.makedirs(SAVE_PATH)
-        
-    # Dynamically determine speeds
-    # allowed_speeds = get_unique_speeds_from_logs(ROOT_PATH)
-    # if not allowed_speeds:
-    #     print("Warning: No speeds found. Using default [0, 3, 5, 10, 15, 30].")
-    #     allowed_speeds = [0, 3, 5, 10, 15, 30] # expected speeds from ontogeny_omr protocol
-        
+    
     fish_records = [] # Storage for intermediate results
     fish_counter = 1  # Initialize sequential fish counter to add a FishID to filename format
     
@@ -323,41 +300,63 @@ def main():
                         tail_data = df[selected_cols].values
                         
                         # [OPTIMIZATION] Bypass TailTrackingData overhead
-                        # Megabouts expects columns named 'angle_0'...'angle_9' regardless of source name
                         tail_df_lite = pd.DataFrame(
                             tail_data, 
                             columns=[f"angle_{i}" for i in range(10)]
                         )
+
+                        # --- [UPDATED] ROBUST ADAPTIVE SEGMENTATION LOGIC ---
+
+                        # 1. Clean Data & Interpolate
+                        tail_df_lite = tail_df_lite.interpolate(method='linear', limit_direction='both').fillna(0)
+
+                        # 2. Check for Degrees vs Radians and convert if necessary
+                        # (This handles the 50x noise difference between species)
+                        median_val = tail_df_lite.abs().median().mean()
+                        if median_val > 2.0: 
+                            tail_df_lite = np.deg2rad(tail_df_lite)
+
+                        # 3. Apply Artifact Cleaning (Unwrap + Median Filter)
+                        tail_df_lite = clean_tail_angles(tail_df_lite)
                         
-                        # 1. Configure Preprocessing
+                        # 4. Configure Preprocessing
                         tailprocessing_config = TailPreprocessingConfig(
                             fps=FPS,
                             savgol_window_ms=MEGABOUTS_DEFAULTS['savgol_window_ms'],
                             tail_speed_filter_ms=MEGABOUTS_DEFAULTS['tail_speed_filter_ms']
                         )
                         
-                        # 2. Configure Segmentation
+                        # 5. Calculate Vigor
+                        print("    [2/3] Running Adaptive Megabouts Segmentation...")
+                        preprocessor = TailPreprocessing(tailprocessing_config)
+                        processed_data = preprocessor.preprocess_tail_df(tail_df_lite)
+                        vigor = processed_data.vigor
+                        vigor = np.nan_to_num(vigor) # Safety: Remove any remaining NaNs
+
+                        # 6. Dynamic Threshold Calculation
+                        # Use 5th percentile as the "True Noise Floor" (resting state)
+                        noise_floor = np.percentile(vigor, 5) 
+                        if noise_floor < 1.0:
+                            noise_floor = 1.0 # Safety floor
+
+                        # MULTIPLIER: 8.0 (Based on our optimization tuning)
+                        dynamic_thresh = noise_floor * MULTIPLIER 
+
+                        # 7. Configure Segmentation
                         # Note: Library expects ms, we convert from frames if needed
                         min_dur_ms = (MEGABOUTS_DEFAULTS['min_duration_frames'] * 1000) / FPS
                         
                         tailsegmnt_cfg = TailSegmentationConfig(
                             fps=FPS,
                             min_bout_duration_ms=min_dur_ms,
-                            threshold=MEGABOUTS_DEFAULTS['bout_thresh']
+                            threshold=dynamic_thresh # [UPDATED] Use calculated threshold
                         )
                         
-                        # 3. Execution Pipeline
-                        print("    [2/3] Running Megabouts Preprocessing...")
-                        preprocessor = TailPreprocessing(tailprocessing_config)
-                        
-                        # Run Preprocessing
-                        processed_data = preprocessor.preprocess_tail_df(tail_df_lite)
-                        
-                        # B. Segmentation
+                        # 8. Run Segmentation
                         segmenter = TailSegmentation(tailsegmnt_cfg)
-                        results = segmenter.segment(processed_data.vigor)
+                        results = segmenter.segment(vigor)
                         
-                        # 4. Extract Frames
+                        # 9. Extract Frames
                         mega_starts = np.array(results.onset)
                         mega_ends = np.array(results.offset)
                         
@@ -481,8 +480,8 @@ def main():
 
     # --- E. SAVE RESULTS ---
     if SAVE_FLAG:
-        f_all = os.path.join(SAVE_PATH, 'Analysis_All_Histograms.pkl')
-        f_speed = os.path.join(SAVE_PATH, 'Analysis_BySpeed_Histograms.pkl')
+        f_all = os.path.join(SAVE_PATH, SAVE_NAME_ALL)
+        f_speed = os.path.join(SAVE_PATH, SAVE_NAME_BYSPEED)
         
         print(f"Saving {f_all}...")
         df_all.to_pickle(f_all)
