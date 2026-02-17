@@ -25,7 +25,7 @@ BIN_CENTERS = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)[:-1] + (BIN_SIZE /
 # 0 -> plots everything manual
 # 1 -> plots everything megabouts
 # 2 -> plots for manual and then for megabouts
-PLOT_FLAG = 0 
+PLOT_FLAG = 2 
 
 # Saving Control
 # 0 -> doesn't save anything
