@@ -30,7 +30,7 @@ PLOT_FLAG = 0
 # Saving Control
 # 0 -> doesn't save anything
 # 1 -> save all generated figures as pngs in the Path('results') folder
-SAVE_FLAG = 0
+SAVE_FLAG = 1
 
 # Metric Type Control
 # 0 -> 'bout' (Bout Duration)
@@ -117,9 +117,8 @@ def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual'
     n = data_matrix.shape[0] # get number of lines (N fish)
     
     # X-Axis (Bin Centers)
-    # Note: If your bins changed, ensure BIN_CENTERS matches the data length
-    # Unit: Seconds
-    x = BIN_CENTERS[:len(mean)] 
+    # [MODIFIED] Convert Seconds to Milliseconds
+    x = BIN_CENTERS[:len(mean)] * 1000 
     
     # Plot Shaded SEM
     ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.25, linewidth=0)
@@ -131,7 +130,7 @@ def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual'
     # Formatting
     ax.set_title(f"{source} {metric_label} Histograms")
     ax.set_ylabel("Probability Density") # Unit: PDF
-    ax.set_xlabel("Time (s)") # Unit: Seconds
+    ax.set_xlabel("Time (ms)") # [MODIFIED] Unit: Milliseconds
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize='small')
 
@@ -170,14 +169,16 @@ def plot_mean_sem_hist_speed(ax, df, species, age, speed, metric_type='bout', so
     sem = np.std(data_matrix, axis=0) / np.sqrt(data_matrix.shape[0])
     n = data_matrix.shape[0] # number of rows (N fish)
     
-    # Unit: Seconds
-    x = BIN_CENTERS[:len(mean)]
+    # X-Axis (Bin Centers)
+    # [MODIFIED] Convert Seconds to Milliseconds
+    x = BIN_CENTERS[:len(mean)] * 1000
     
     ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.25, linewidth=0)
     label = f"{species} {age}dpf @ {speed} mm/s (N={n})"
     ax.plot(x, mean, color=color, linewidth=2, label=label)
     
     ax.set_title(f"{source} {metric_label} @ {speed} mm/s")
+    ax.set_xlabel("Time (ms)") # [MODIFIED] Unit: Milliseconds
     ax.grid(True, alpha=0.3)
 
 def generate_color_palette(n_colors):
@@ -209,19 +210,22 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
         fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
         fig.suptitle(f"Pooled {metric_label} Distributions ({source})", fontsize=16)
         
+        # [MODIFIED] Set X-Limit: 0.5s -> 500ms (Bouts), 1.0s -> 1000ms (IBI)
+        x_limit = 500 if metric == 'bout' else 1000
+
         # Giant Subplot
         colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
         for i, age in enumerate(SPECIES_GROUPS['Giant']):
             plot_mean_sem_hist(axes[0], df_all, 'Giant', age, metric, source, colors_g[i])
         axes[0].set_title("Giant")
-        axes[0].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Limit x-axis to 0.5s (bouts) or 1.0s (IBI)
+        axes[0].set_xlim(0, x_limit) 
 
         # Tu Subplot
         colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
         for i, age in enumerate(SPECIES_GROUPS['Tu']):
             plot_mean_sem_hist(axes[1], df_all, 'Tu', age, metric, source, colors_t[i])
         axes[1].set_title("Tu")
-        axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Limit x-axis to 0.5s (bouts) or 1.0s (IBI)
+        axes[1].set_xlim(0, x_limit) 
         
         # Save Figure
         save_figure(fig, f"Pooled_{metric_label}_{source}")
@@ -233,19 +237,22 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
             fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
             fig.suptitle(f"{metric_label} Distributions at 0 mm/s ({source})", fontsize=16)
             
+            # [MODIFIED] Set X-Limit: 0.5s -> 500ms (Bouts), 1.0s -> 1000ms (IBI)
+            x_limit = 500 if metric == 'bout' else 1000
+            
             # Giant Speed 0
             colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
             for i, age in enumerate(SPECIES_GROUPS['Giant']):
                 plot_mean_sem_hist_speed(axes[0], df_speed, 'Giant', age, 0, metric, source, colors_g[i])
             axes[0].set_title("Giant (0 mm/s)")
-            axes[0].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Seconds
+            axes[0].set_xlim(0, x_limit)
             
             # Tu Speed 0
             colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
             for i, age in enumerate(SPECIES_GROUPS['Tu']):
                 plot_mean_sem_hist_speed(axes[1], df_speed, 'Tu', age, 0, metric, source, colors_t[i])
             axes[1].set_title("Tu (0 mm/s)")
-            axes[1].set_xlim(0, 0.5 if metric == 'bout' else 1.0) # Seconds
+            axes[1].set_xlim(0, x_limit)
             
             # Save Figure
             save_figure(fig, f"Speed0_{metric_label}_{source}")
@@ -261,8 +268,8 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
             fig, axes = plt.subplots(2, 6, figsize=(20, 8), constrained_layout=True, sharex=True, sharey='row')
             fig.suptitle(f"{metric_label} Duration Across All Speeds ({source})", fontsize=16)
             
-            # Determine X-Limit (0.5s for Bout, 1.0s for IBI)
-            x_limit = 0.5 if metric == 'bout' else 1.0
+            # [MODIFIED] Set X-Limit: 0.5s -> 500ms (Bouts), 1.0s -> 1000ms (IBI)
+            x_limit = 500 if metric == 'bout' else 1000
             
             # Row 0: Giant
             colors_g = generate_color_palette(len(SPECIES_GROUPS['Giant']))
@@ -271,7 +278,7 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
                 for i, age in enumerate(SPECIES_GROUPS['Giant']):
                     plot_mean_sem_hist_speed(ax, df_speed, 'Giant', age, speed, metric, source, colors_g[i])
                 ax.set_title(f"Giant @ {speed} mm/s")
-                ax.set_xlim(0, x_limit) # Seconds
+                ax.set_xlim(0, x_limit) 
                 if col == 0:
                     ax.legend(fontsize='xx-small')
 
@@ -282,7 +289,7 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
                 for i, age in enumerate(SPECIES_GROUPS['Tu']):
                     plot_mean_sem_hist_speed(ax, df_speed, 'Tu', age, speed, metric, source, colors_t[i])
                 ax.set_title(f"Tu @ {speed} mm/s")
-                ax.set_xlim(0, x_limit) # Seconds
+                ax.set_xlim(0, x_limit) 
                 
             # Save Figure
             save_figure(fig, f"Grid_AllSpeeds_{metric_label}_{source}")
