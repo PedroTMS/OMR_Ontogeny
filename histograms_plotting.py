@@ -137,7 +137,7 @@ def plot_mean_sem_hist(ax, df, species, age, metric_type='bout', source='Manual'
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize='small')
 
-def plot_mean_sem_hist_speed(ax, df, species, age, speed, metric_type='bout', source='Manual', color=None):
+def plot_mean_sem_hist_speed(ax, df, species, age, speed, metric_type='bout', source='Manual', color=None, show_legend=True):
     """
     Replicates plot_mean_sem_hist_speed.m: Plots Mean +/- SEM for a specific speed group.
 
@@ -183,6 +183,8 @@ def plot_mean_sem_hist_speed(ax, df, species, age, speed, metric_type='bout', so
     ax.set_title(f"{source} {metric_label} @ {speed} mm/s")
     ax.set_xlabel("Time (ms)") # [MODIFIED] Unit: Milliseconds
     ax.grid(True, alpha=0.3)
+    if show_legend:
+        ax.legend(fontsize='x-small')
 
 def generate_color_palette(n_colors):
     """Generates a list of distinct colors."""
@@ -222,6 +224,10 @@ def plot_dual_2x2_manual_vs_megabouts(df_all):
                 ax.set_ylabel("Probability Density")
                 ax.grid(True, alpha=0.3)
                 ax.legend(fontsize='x-small')
+                if col != 0:
+                    legend = ax.get_legend()
+                    if legend is not None:
+                        legend.remove()
 
         save_figure(fig, f"Compare2x2_{metric_label}_Manual_vs_Megabouts")
 
@@ -318,18 +324,16 @@ def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
             for col, speed in enumerate(speeds):
                 ax = axes[0, col]
                 for i, age in enumerate(SPECIES_GROUPS['Giant']):
-                    plot_mean_sem_hist_speed(ax, df_speed, 'Giant', age, speed, metric, source, colors_g[i])
+                    plot_mean_sem_hist_speed(ax, df_speed, 'Giant', age, speed, metric, source, colors_g[i], show_legend=(col == 0))
                 ax.set_title(f"Giant @ {speed} mm/s")
                 ax.set_xlim(0, x_limit) 
-                if col == 0:
-                    ax.legend(fontsize='xx-small')
 
             # Row 1: Tu
             colors_t = generate_color_palette(len(SPECIES_GROUPS['Tu']))
             for col, speed in enumerate(speeds):
                 ax = axes[1, col]
                 for i, age in enumerate(SPECIES_GROUPS['Tu']):
-                    plot_mean_sem_hist_speed(ax, df_speed, 'Tu', age, speed, metric, source, colors_t[i])
+                    plot_mean_sem_hist_speed(ax, df_speed, 'Tu', age, speed, metric, source, colors_t[i], show_legend=(col == 0))
                 ax.set_title(f"Tu @ {speed} mm/s")
                 ax.set_xlim(0, x_limit) 
                 
