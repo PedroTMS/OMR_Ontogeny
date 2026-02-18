@@ -32,7 +32,7 @@ PLOT_FLAG = 2
 # Saving Control
 # 0 -> doesn't save anything
 # 1 -> save all generated figures as pngs in the Path('results') folder
-SAVE_FLAG = 0
+SAVE_FLAG = 1
 
 # Metric Type Control
 # 0 -> 'bout' (Bout Duration)
