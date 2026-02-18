@@ -1,0 +1,5 @@
+{
+  "python.dataScience.showPlotViewer": true,
+  "python.dataScience.sendSelectionToInteractiveWindow": true,
+  "jupyter.sendSelectionToInteractiveWindow": true
+}

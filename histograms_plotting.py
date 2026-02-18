@@ -28,12 +28,12 @@ BIN_CENTERS = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)[:-1] + (BIN_SIZE /
 # 1 -> plots everything megabouts
 # 2 -> plots for manual and then for megabouts
 # 3 -> plots two 2x2 figures: Bout and IBI (rows=species, cols=manual/megabouts)
-PLOT_FLAG = 2
+PLOT_FLAG = 3
 
 # Saving Control
 # 0 -> doesn't save anything
 # 1 -> save all generated figures as pngs in the Path('results') folder
-SAVE_FLAG = 1
+SAVE_FLAG = 0
 
 # Metric Type Control
 # 0 -> 'bout' (Bout Duration)
@@ -368,6 +368,9 @@ def main():
     
     else:
         print(f"Invalid PLOT_FLAG: {PLOT_FLAG}. Use 0 (Manual), 1 (Megabouts), 2 (Both), or 3 (Dual 2x2 compare).")
+    
+    if not SAVE_FLAG:
+        print("!!!No figures saved!!!")
     
     print("Done.")
 
