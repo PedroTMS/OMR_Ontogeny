@@ -27,6 +27,7 @@ BIN_CENTERS = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)[:-1] + (BIN_SIZE /
 # 0 -> plots everything manual
 # 1 -> plots everything megabouts
 # 2 -> plots for manual and then for megabouts
+# 3 -> plots two 2x2 figures: Bout and IBI (rows=species, cols=manual/megabouts)
 PLOT_FLAG = 2
 
 # Saving Control
@@ -187,6 +188,45 @@ def generate_color_palette(n_colors):
     """Generates a list of distinct colors."""
     return sns.color_palette("husl", n_colors)
 
+def plot_dual_2x2_manual_vs_megabouts(df_all):
+    """
+    Creates two figures (Bout and IBI), each as a 2x2 grid.
+    Rows = Species (Giant, Tu), Columns = Source (Manual, Megabouts).
+    """
+    if df_all is None:
+        return
+
+    species_order = ['Giant', 'Tu']
+    metric_order = ['bout', 'ibi']
+    source_order = ['Manual', 'Megabouts']
+
+    for metric in metric_order:
+        metric_label = "IBI" if metric == 'ibi' else "Bout"
+        x_limit = 500 if metric == 'bout' else 1000
+
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10), constrained_layout=True)
+        fig.suptitle(f"{metric_label} Comparison: Manual vs Megabouts", fontsize=16)
+
+        for row, species in enumerate(species_order):
+            colors = generate_color_palette(len(SPECIES_GROUPS[species]))
+
+            for col, source in enumerate(source_order):
+                ax = axes[row, col]
+
+                for i, age in enumerate(SPECIES_GROUPS[species]):
+                    plot_mean_sem_hist(ax, df_all, species, age, metric, source, colors[i])
+
+                ax.set_title(f"{species} - {source}")
+                ax.set_xlim(0, x_limit)
+                ax.set_xlabel("Time (ms)")
+                ax.set_ylabel("Probability Density")
+                ax.grid(True, alpha=0.3)
+                ax.legend(fontsize='x-small')
+
+        save_figure(fig, f"Compare2x2_{metric_label}_Manual_vs_Megabouts")
+
+    plt.show()
+
 def replicate_plothistograms_alldata(df_all, df_speed, source='Manual'):
     """
     Replicates the figures generated in plothistograms_alldata.m
@@ -307,7 +347,7 @@ def main():
         return
 
     # 2. Generate Plots based on Flag
-    # PLOT_FLAG defined in CONFIGURATION: 0=Manual, 1=Megabouts, 2=Both
+    # PLOT_FLAG defined in CONFIGURATION: 0=Manual, 1=Megabouts, 2=Both, 3=Dual 2x2 compare
     
     if PLOT_FLAG == 0:
         # Plot Manual Only
@@ -321,9 +361,13 @@ def main():
         # Plot Manual then Megabouts
         replicate_plothistograms_alldata(df_all, df_speed, source='Manual')
         replicate_plothistograms_alldata(df_all, df_speed, source='Megabouts')
+
+    elif PLOT_FLAG == 3:
+        # Plot Bout and IBI comparison in two 2x2 figures
+        plot_dual_2x2_manual_vs_megabouts(df_all)
     
     else:
-        print(f"Invalid PLOT_FLAG: {PLOT_FLAG}. Use 0 (Manual), 1 (Megabouts), or 2 (Both).")
+        print(f"Invalid PLOT_FLAG: {PLOT_FLAG}. Use 0 (Manual), 1 (Megabouts), 2 (Both), or 3 (Dual 2x2 compare).")
     
     print("Done.")
 
