@@ -17,6 +17,8 @@ from pathlib import Path
 # --- CONFIGURATION ---
 DATASET_PATH = Path("dataset")  # Path where .pkl files are saved
 RESULTS_PATH = Path("results")  # Path where .png figures will be saved
+DATASET_ALL_NAME = 'Analysis_All_Histograms_v2.pkl'
+DATASET_BYSPEED_NAME = 'Analysis_BySpeed_Histograms_v2.pkl'
 BIN_SIZE = 0.05 # Seconds (Time bin width)
 MAX_DURATION = 2.0 # Seconds (Maximum duration analyzed)
 BIN_CENTERS = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)[:-1] + (BIN_SIZE / 2) # Center of bins (Seconds)
@@ -25,12 +27,12 @@ BIN_CENTERS = np.arange(0, MAX_DURATION + BIN_SIZE, BIN_SIZE)[:-1] + (BIN_SIZE /
 # 0 -> plots everything manual
 # 1 -> plots everything megabouts
 # 2 -> plots for manual and then for megabouts
-PLOT_FLAG = 2 
+PLOT_FLAG = 2
 
 # Saving Control
 # 0 -> doesn't save anything
 # 1 -> save all generated figures as pngs in the Path('results') folder
-SAVE_FLAG = 1
+SAVE_FLAG = 0
 
 # Metric Type Control
 # 0 -> 'bout' (Bout Duration)
@@ -46,8 +48,8 @@ SPECIES_GROUPS = {
 
 def load_data():
     """Loads the analysis dataframes if they exist."""
-    f_all = DATASET_PATH / 'Analysis_All_Histograms.pkl'
-    f_speed = DATASET_PATH / 'Analysis_BySpeed_Histograms.pkl'
+    f_all = DATASET_PATH / DATASET_ALL_NAME
+    f_speed = DATASET_PATH / DATASET_BYSPEED_NAME
     
     df_all = None
     df_speed = None
